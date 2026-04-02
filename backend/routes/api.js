@@ -8,15 +8,15 @@ const db = require('../db');
 router.get('/tr', async (req, res) => {
   try {
     const userId = req.query.user || '9911';
-    const [rows] = await db.query('SELECT treshold FROM device_states WHERE user_id = ?', [userId]);
+    const [rows] = await db.query('SELECT threshold FROM device_states WHERE user_id = ?', [userId]);
     
     if (rows.length > 0) {
       res.json({ success: true, data: rows[0] });
     } else {
-      res.status(404).json({ success: false, message: 'Treshold not found' });
+      res.status(404).json({ success: false, message: 'Threshold not found' });
     }
   } catch (error) {
-    console.error('Error fetching treshold:', error);
+    console.error('Error fetching threshold:', error);
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 });
