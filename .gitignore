@@ -1,0 +1,42 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+Hidroponik/node_modules/
+backend/node_modules/
+
+# Expo
+Hidroponik/.expo/
+Hidroponik/dist/
+Hidroponik/web-build/
+Hidroponik/expo-env.d.ts
+
+# Native
+Hidroponik/.kotlin/
+Hidroponik/*.orig.*
+Hidroponik/*.jks
+Hidroponik/*.p8
+Hidroponik/*.p12
+Hidroponik/*.key
+Hidroponik/*.mobileprovision
+
+# Metro
+Hidroponik/.metro-health-check*
+
+# debug
+Hidroponik/npm-debug.*
+Hidroponik/yarn-debug.*
+Hidroponik/yarn-error.*
+
+# macOS
+Hidroponik/.DS_Store
+Hidroponik/*.pem
+
+# local env files
+Hidroponik/.env*.local
+
+# typescript
+Hidroponik/*.tsbuildinfo
+
+# generated native folders
+Hidroponik/ios
+Hidroponik/android
