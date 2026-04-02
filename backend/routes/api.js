@@ -4,6 +4,41 @@ const db = require('../db');
 
 // GET /api/ph?days=1
 // Mengambil data pH untuk x hari ke belakang
+// Ambil treshold dari db
+router.get('/tr', async (req, res) => {
+  try {
+    const userId = req.query.user || '9911';
+    const [rows] = await db.query('SELECT treshold FROM device_states WHERE user_id = ?', [userId]);
+    
+    if (rows.length > 0) {
+      res.json({ success: true, data: rows[0] });
+    } else {
+      res.status(404).json({ success: false, message: 'Treshold not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching treshold:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+});
+
+//ambil status relay 1/2
+router.get('/relay', async (req, res) => {
+  try {
+    const userId = req.query.user || '9911';
+    const [rows] = await db.query('SELECT relay1_status, relay2_status, mode FROM device_states WHERE user_id = ?', [userId]);
+    
+    if (rows.length > 0) {
+      res.json({ success: true, data: rows[0] });
+    } else {
+      res.status(404).json({ success: false, message: 'Relay not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching relay:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+});
+
+
 router.get('/ph', async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 1;
