@@ -89,13 +89,23 @@ export default function App() {
   const [historyData,   setHistoryData]   = useState<any[]>([]);
   const [historyLoading,setHistoryLoading]= useState(false);
 
-  const ws          = useRef<WebSocket | null>(null);
-  const timeoutRef  = useRef<NodeJS.Timeout | null>(null);
+  const ws                   = useRef<WebSocket | null>(null);
+  const timeoutRef           = useRef<NodeJS.Timeout | null>(null);
+  // Grace period: abaikan update WS untuk relay/mode/threshold selama N ms
+  // setelah fetchInitialState() selesai, agar WS subscription response tidak
+  // menimpa state yang sudah diload dari DB.
+  const ignoreWsStateUntil   = useRef<number>(0);
 
   // ── WebSocket & initial fetch ───────────────────────────────────────────────
   useEffect(() => {
+    // 1. Load state awal dari DB (relay & threshold) sebelum WebSocket
+    fetchInitialState().then(() => {
+      // 2. Baru connect WebSocket setelah data awal berhasil dimuat
+      connectWebSocket();
+    });
+    // 3. Load data chart dari DB langsung
     fetchInitialRealtimeHistory();
-    connectWebSocket();
+    // 4. Interval fetch chart dari DB setiap 1 menit
     const id = setInterval(fetchInitialRealtimeHistory, 60_000);
     return () => {
       clearInterval(id);
@@ -104,6 +114,37 @@ export default function App() {
     };
   }, []);
 
+  // Load status relay & threshold dari DB via API saat app pertama dibuka
+  const fetchInitialState = async () => {
+    try {
+      // Fetch relay status dari DB
+      const relayRes = await axios.get(`${API_URL}/api/relay?user=${USER_ID}`);
+      if (relayRes.data?.success && relayRes.data.data) {
+        const d = relayRes.data.data;
+        setRelay1(d.relay1_status === 1 || d.relay1_status === true || d.relay1_status === '1');
+        setRelay2(d.relay2_status === 1 || d.relay2_status === true || d.relay2_status === '1');
+        if (d.mode) setMode(d.mode === 'otomatis' ? 'otomatis' : 'manual');
+      }
+    } catch (e) {
+      console.error('fetchInitialState (relay):', e);
+    }
+    try {
+      // Fetch threshold dari DB
+      const trRes = await axios.get(`${API_URL}/api/tr?user=${USER_ID}`);
+      if (trRes.data?.success && trRes.data.data) {
+        const t = trRes.data.data.threshold;
+        if (t !== undefined && t !== null) setThreshold(String(t));
+      }
+    } catch (e) {
+      console.error('fetchInitialState (threshold):', e);
+    }
+    // Setelah load dari DB selesai, set grace period 8 detik.
+    // Selama 8 detik ke depan, update relay/mode/threshold dari WebSocket
+    // akan diabaikan agar subscription response tidak menimpa data DB.
+    ignoreWsStateUntil.current = Date.now() + 8_000;
+  };
+
+  // Fetch data chart dari DB (dipanggil saat pertama buka & setiap 1 menit)
   const fetchInitialRealtimeHistory = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/ph?days=1&user=${USER_ID}`);
@@ -147,31 +188,42 @@ export default function App() {
   };
 
   const handleWsMessage = (topic: string, payload: any) => {
+    // Cek apakah masih dalam grace period (setelah load DB awal)
+    const inGracePeriod = Date.now() < ignoreWsStateUntil.current;
+
     switch (topic) {
       case `data/ph/user/${USER_ID}`: {
+        // pH live tetap update dari WebSocket (tidak ada grace period untuk pH)
+        // Grafik hanya diupdate dari DB setiap 1 menit
         const val = typeof payload === 'object'
           ? (payload.pH ?? payload.sensor1 ?? parseFloat(payload))
           : parseFloat(payload);
         if (!isNaN(val)) {
           setPh(val);
           setIsOnline(true);
-          setRealtimeHistory(prev => [...prev, { created_at: new Date().toISOString(), value: val }].slice(-10));
           if (timeoutRef.current) clearTimeout(timeoutRef.current);
           timeoutRef.current = setTimeout(() => setIsOnline(false), 10_000);
         }
         break;
       }
       case `data/mode/user/${USER_ID}`:
-        setMode(payload === 'otomatis' ? 'otomatis' : 'manual');
+        // Abaikan selama grace period agar tidak timpa state dari DB
+        if (!inGracePeriod) setMode(payload === 'otomatis' ? 'otomatis' : 'manual');
         break;
       case `data/relay1/user/${USER_ID}`:
-        setRelay1(payload === true || payload === 'true' || payload === '1' || payload === 1);
+        // Abaikan selama grace period agar tidak timpa state dari DB
+        if (!inGracePeriod)
+          setRelay1(payload === true || payload === 'true' || payload === '1' || payload === 1);
         break;
       case `data/relay2/user/${USER_ID}`:
-        setRelay2(payload === true || payload === 'true' || payload === '1' || payload === 1);
+        // Abaikan selama grace period agar tidak timpa state dari DB
+        if (!inGracePeriod)
+          setRelay2(payload === true || payload === 'true' || payload === '1' || payload === 1);
         break;
       case `data/treshold/user/${USER_ID}`:
-        setThreshold(typeof payload === 'object' ? (payload.threshold ?? '6.5') : String(payload));
+        // Abaikan selama grace period agar tidak timpa state dari DB
+        if (!inGracePeriod)
+          setThreshold(typeof payload === 'object' ? (payload.threshold ?? '6.5') : String(payload));
         break;
     }
   };
@@ -285,7 +337,7 @@ export default function App() {
       {/* ── App Bar ── */}
       <View style={S.appBar}>
         <View>
-          <Text style={S.appBarBrand}>GreenDrop</Text>
+          <Text style={S.appBarBrand}>IoT</Text>
           <Text style={S.appBarSub}>Hydroponics Control</Text>
         </View>
         <View style={S.pill}>
@@ -404,8 +456,8 @@ export default function App() {
             {/* Relay Grid */}
             <View style={S.relayGrid}>
               {[
-                { id: 1 as const, icon: 'droplet' as const, title: 'Nutrition Pump',     active: relay1 },
-                { id: 2 as const, icon: 'wind'    as const, title: 'Circulation Fan',    active: relay2 },
+                { id: 1 as const, icon: 'droplet' as const, title: 'Asam',     active: relay1 },
+                { id: 2 as const, icon: 'wind'    as const, title: 'Basa',    active: relay2 },
               ].map(({ id, icon, title, active }) => (
                 <TouchableOpacity
                   key={id}
@@ -525,7 +577,7 @@ export default function App() {
             {/* Download Button */}
             <TouchableOpacity style={S.btnDownload} onPress={downloadData} activeOpacity={0.85}>
               <Feather name="download-cloud" size={18} color="#FFFFFF" />
-              <Text style={S.btnDownloadText}>Unduh Riwayat 7 Hari</Text>
+              <Text style={S.btnDownloadText}>Unduh Data</Text>
             </TouchableOpacity>
           </>
         )}
