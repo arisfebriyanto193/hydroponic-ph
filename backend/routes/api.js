@@ -21,6 +21,24 @@ router.get('/tr', async (req, res) => {
   }
 });
 
+router.get('/mode', async (req, res) => {
+  try {
+    const userId = req.query.user || '9911';
+    const [rows] = await db.query('SELECT mode FROM device_states WHERE user_id = ?', [userId]);
+    
+    if (rows.length > 0) {
+      res.json({ success: true, data: rows[0] });
+    } else {
+      res.status(404).json({ success: false, message: 'Mode not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching mode:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+});
+
+
+
 //ambil status relay 1/2
 router.get('/relay', async (req, res) => {
   try {
