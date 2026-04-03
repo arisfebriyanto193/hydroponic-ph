@@ -51,6 +51,7 @@ bool   relay2State      = false;   // Basa
 String currentMode      = "manual";
 float  threshold        = 6.5f;
 bool   thresholdLoaded  = false;   // sudah ada nilai dari EEPROM/API
+bool   isFirstConnect   = true;    // flag: koneksi WS pertama kali setelah boot
 
 unsigned long relay1OnAt = 0;      // cooldown timestamp relay1
 unsigned long relay2OnAt = 0;      // cooldown timestamp relay2
@@ -422,6 +423,19 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
         webSocket.sendTXT(msg);
         Serial.println("[WS] Subscribed: " + String(t) + cfgUserId);
       }
+
+      // Saat pertama kali boot: pastikan relay dalam kondisi OFF
+      // dan beritahu semua subscriber (app) bahwa relay mati
+      if (isFirstConnect) {
+        isFirstConnect = false;
+        relay1State = false;
+        relay2State = false;
+        digitalWrite(RELAY1_PIN, LOW);
+        digitalWrite(RELAY2_PIN, LOW);
+        publishRelayState(1, false);
+        publishRelayState(2, false);
+        Serial.println("[WS] Boot: relay direset ke OFF dan dipublish.");
+      }
       break;
     }
 
@@ -481,8 +495,8 @@ void setup() {
     Serial.println("[NVS] No threshold saved yet.");
   }
 
-  publishRelayState(1, false);
-  publishRelayState(2, false);
+
+
 
 
 
@@ -508,7 +522,8 @@ void setup() {
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
   webSocket.enableHeartbeat(15000, 3000, 2);  // ping setiap 15 detik
-
+  publishRelayState(1, false);
+  publishRelayState(2, false);
   Serial.println("═══ Setup selesai ═══\n");
 }
 

@@ -235,9 +235,26 @@ export default function App() {
       Alert.alert('Koneksi Terputus', 'WebSocket offline — instruksi tidak dapat dikirim.');
   };
 
-  const toggleMode = () => {
+  const toggleMode = async () => {
     const next = mode === 'otomatis' ? 'manual' : 'otomatis';
     setMode(next);
+
+    // Saat beralih ke mode otomatis, pastikan threshold sudah ada nilainya
+    // dengan fetch dari API terlebih dahulu agar tidak undefined
+    if (next === 'otomatis') {
+      try {
+        const res = await axios.get(`${API_URL}/api/tr?user=${USER_ID}`);
+        if (res.data?.success && res.data.data) {
+          const t = res.data.data.threshold;
+          if (t !== undefined && t !== null && String(t).trim() !== '') {
+            setThreshold(String(t));
+          }
+        }
+      } catch (e) {
+        console.error('toggleMode fetch threshold:', e);
+      }
+    }
+
     publish(`data/mode/user/${USER_ID}`, next);
   };
 
