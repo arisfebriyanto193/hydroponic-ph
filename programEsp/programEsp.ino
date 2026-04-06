@@ -422,7 +422,6 @@ void fetchThresholdFromAPI() {
     String body = http.getString();
     StaticJsonDocument<256> doc;
     DeserializationError err = deserializeJson(doc, body);
-
     if (!err && doc["success"].as<bool>()) {
       String threshStr = doc["data"]["threshold"].as<String>();
       float val = threshStr.toFloat();
