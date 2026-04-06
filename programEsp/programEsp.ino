@@ -10,7 +10,7 @@
 
 
 #define RELAY1_PIN     2
-#define RELAY2_PIN     27
+#define RELAY2_PIN     4
 #define PH_SENSOR_PIN  34
 #define CALIB_BTN_PIN  0
 
@@ -327,7 +327,7 @@ void hCalibExit() { calibServer.send(200, "text/plain", "OK"); delay(1500); ESP.
 void startCalibrationMode() {
   calibMode = true;
   Serial.println("\n[CALIB] ═══ Masuk Mode Kalibrasi pH ═══");
-  digitalWrite(RELAY1_PIN, LOW); digitalWrite(RELAY2_PIN, LOW);
+  digitalWrite(RELAY1_PIN, 1); digitalWrite(RELAY2_PIN, 1);
   relay1State = false; relay2State = false;
   webSocket.disconnect();
   WiFi.disconnect(true); delay(500);
@@ -359,17 +359,17 @@ void publishRelayState(int relayId, bool state) {
 
 void setRelay1(bool state, bool publish) {
   relay1State = state;
-  digitalWrite(RELAY1_PIN, state ? HIGH : LOW);
+  digitalWrite(RELAY1_PIN, state ? 0 : 1);
   if (state) relay1OnAt = millis();
-  Serial.printf("[Relay1/Asam] %s\n", state ? "ON" : "OFF");
+  Serial.printf("[Relay1/Asam] %s\n", state ? "OFF" : "ON");
   if (publish) publishRelayState(1, state);
 }
 
 void setRelay2(bool state, bool publish) {
   relay2State = state;
-  digitalWrite(RELAY2_PIN, state ? HIGH : LOW);
+  digitalWrite(RELAY2_PIN, state ? 0 : 1);
   if (state) relay2OnAt = millis();
-  Serial.printf("[Relay2/Basa] %s\n", state ? "ON" : "OFF");
+  Serial.printf("[Relay2/Basa] %s\n", state ? "OFF" : "ON");
   if (publish) publishRelayState(2, state);
 }
 
@@ -572,8 +572,8 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
         isFirstConnect = false;
         relay1State = false;
         relay2State = false;
-        digitalWrite(RELAY1_PIN, LOW);
-        digitalWrite(RELAY2_PIN, LOW);
+        digitalWrite(RELAY1_PIN, 1);
+        digitalWrite(RELAY2_PIN, 1);
         publishRelayState(1, false);
         publishRelayState(2, false);
         Serial.println("[WS] Boot: relay direset ke OFF dan dipublish.");
@@ -620,8 +620,8 @@ void setup() {
   pinMode(RELAY1_PIN,   OUTPUT);
   pinMode(RELAY2_PIN,   OUTPUT);
   pinMode(CALIB_BTN_PIN, INPUT_PULLUP);
-  digitalWrite(RELAY1_PIN, LOW);
-  digitalWrite(RELAY2_PIN, LOW);
+  digitalWrite(RELAY1_PIN, 1);
+  digitalWrite(RELAY2_PIN, 1);
 
 
   loadCalibration();
