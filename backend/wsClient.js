@@ -11,25 +11,47 @@ let reconnectInterval = 5000;
 const USER_ID = '9911';
 let latestPhData = null; 
 
+// Maksimum jumlah data yang disimpan per user (circular buffer)
+const MAX_RECORDS = 250;
+
 // Cron job berjalan setiap kelipatan 5 menit (contoh: 00:00, 00:05, 00:10, dst)
 cron.schedule('*/5 * * * *', async () => {
   if (latestPhData !== null) {
     let phValue = 0;
     if (typeof latestPhData === 'object' && latestPhData !== null) {
-      phValue = latestPhData.sensor1 || latestPhData.pH || 0; // Adjust standard according to actual data
+      phValue = latestPhData.sensor1 || latestPhData.pH || 0;
     } else {
       phValue = parseFloat(latestPhData);
     }
     
     if (!isNaN(phValue)) {
       try {
-        await db.query(`INSERT INTO ph_logs (user_id, sensor_type, value) VALUES (?, 'ph', ?)`, [USER_ID, phValue]);
-        console.log(`[DB Cron] Saved pH data at ${new Date().toLocaleTimeString('id-ID')}: ${phValue}`);
+        // Hitung jumlah data yang sudah ada untuk user ini
+        const [[{ total }]] = await db.query(
+          `SELECT COUNT(*) AS total FROM ph_logs WHERE user_id = ?`,
+          [USER_ID]
+        );
+
+        // Jika sudah mencapai batas maksimum, hapus data terlama (circular buffer)
+        if (total >= MAX_RECORDS) {
+          await db.query(
+            `DELETE FROM ph_logs WHERE user_id = ? ORDER BY id ASC LIMIT 1`,
+            [USER_ID]
+          );
+          console.log(`[DB Cron] Circular buffer: hapus data terlama (total sebelumnya: ${total})`);
+        }
+
+        // Simpan data baru
+        await db.query(
+          `INSERT INTO ph_logs (user_id, sensor_type, value) VALUES (?, 'ph', ?)`,
+          [USER_ID, phValue]
+        );
+        console.log(`[DB Cron] Saved pH data at ${new Date().toLocaleTimeString('id-ID')}: ${phValue} (record ${Math.min(total + 1, MAX_RECORDS)}/${MAX_RECORDS})`);
       } catch (error) {
         console.error('[DB Cron] Error saving pH data:', error);
       }
     }
-    // Hapus data setelah disimpan agar tidak duplicate jika tidak ada data baru (opsional)
+    // Reset agar tidak duplicate saat tidak ada data baru
     latestPhData = null;
   }
 });

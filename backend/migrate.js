@@ -47,7 +47,7 @@ async function migrate() {
       CREATE TABLE IF NOT EXISTS settings (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id VARCHAR(50),
-        retention_days INT DEFAULT 2,
+        max_records INT DEFAULT 250,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE(user_id)
       )
@@ -59,7 +59,7 @@ async function migrate() {
       INSERT IGNORE INTO device_states (user_id, mode) VALUES ('9911', 'manual')
     `);
     await connection.query(`
-      INSERT IGNORE INTO settings (user_id, retention_days) VALUES ('9911', 2)
+      INSERT IGNORE INTO settings (user_id, max_records) VALUES ('9911', 250)
     `);
     console.log('Initial data inserted.');
 
