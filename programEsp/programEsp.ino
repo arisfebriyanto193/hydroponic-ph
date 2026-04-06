@@ -1,86 +1,64 @@
-/**
- * ═══════════════════════════════════════════════════════════════════
- *  Hydroponic pH Controller — ESP32
- * ═══════════════════════════════════════════════════════════════════
- *  Library yang dibutuhkan (install via Arduino Library Manager):
- *   - WiFiManager by tzapu          (v2.0+)
- *   - WebSockets by Markus Sattler  (v2.4+)
- *   - ArduinoJson by Benoit Blanchon (v6+)
- *
- *  Fitur:
- *   - WiFiManager: config WiFi, API URL, WebSocket host via portal web
- *   - Threshold: fetch dari API saat boot, simpan di Preferences (NVS)
- *     → update selanjutnya via WebSocket (tidak perlu API lagi)
- *   - Mode Otomatis: relay dikontrol otomatis berdasarkan pH vs threshold
- *   - Mode Manual  : relay dikontrol dari aplikasi via WebSocket
- *   - Setiap perubahan relay di-publish ke WebSocket
- *   - Kirim data pH ke WebSocket setiap interval
- * ═══════════════════════════════════════════════════════════════════
- */
+
 
 #include <WiFi.h>
-#include <WiFiManager.h>         // https://github.com/tzapu/WiFiManager
-#include <WebSocketsClient.h>    // https://github.com/Links2004/arduinoWebSockets
-#include <ArduinoJson.h>         // https://github.com/bblanchon/ArduinoJson
-#include <Preferences.h>         // Built-in ESP32 NVS (Non-Volatile Storage)
-#include <HTTPClient.h>          // Built-in
-#include <WebServer.h>           // Built-in ESP32 — untuk web kalibrasi
+#include <WiFiManager.h>
+#include <WebSocketsClient.h>
+#include <ArduinoJson.h>
+#include <Preferences.h>
+#include <HTTPClient.h>
+#include <WebServer.h>
 
-// ─── Pin Configuration ────────────────────────────────────────────────────────
-#define RELAY1_PIN     2    // Relay Asam (Acid) — menurunkan pH
-#define RELAY2_PIN     27   // Relay Basa (Base) — menaikkan pH
-#define PH_SENSOR_PIN  34   // pH sensor analog input (ADC1)
-#define CALIB_BTN_PIN  0    // Tombol D0/BOOT — tekan saat boot untuk kalibrasi
 
-// ─── Konstanta ────────────────────────────────────────────────────────────────
-#define PH_SEND_INTERVAL     1500    // Kirim pH ke WS setiap 1.5 detik
-#define RELAY_MIN_ON_TIME    3000    // Relay minimal menyala 3 detik (cooldown)
-#define PH_DEAD_BAND         0.15f   // ±0.15 dari threshold = zona aman
-#define CALIB_BTN_HOLD_MS    3000    // Tahan D0 3 detik saat running untuk kalibrasi
+#define RELAY1_PIN     2
+#define RELAY2_PIN     27
+#define PH_SENSOR_PIN  34
+#define CALIB_BTN_PIN  0
 
-// ─── Default Config (bisa diubah via WiFiManager portal) ─────────────────────
+
+#define PH_SEND_INTERVAL     1500
+#define RELAY_MIN_ON_TIME    3000
+#define PH_DEAD_BAND         0.15f
+#define CALIB_BTN_HOLD_MS    3000
+
+
 char cfgWsHost[80]   = "server-iot-qbyte.qbyte.web.id";
 char cfgWsPath[40]   = "/ws";
 char cfgApiBase[120] = "https://hydroponik.qbyte.web.id";
 char cfgUserId[20]   = "9911";
 
-// ─── State Global ─────────────────────────────────────────────────────────────
+
 WebSocketsClient webSocket;
 Preferences       prefs;
 
 bool   wsConnected      = false;
-bool   relay1State      = false;   // Asam
-bool   relay2State      = false;   // Basa
+bool   relay1State      = false;
+bool   relay2State      = false;
 String currentMode      = "manual";
 float  threshold        = 6.5f;
-bool   thresholdLoaded  = false;   // sudah ada nilai dari EEPROM/API
-bool   isFirstConnect   = true;    // flag: koneksi WS pertama kali setelah boot
+bool   thresholdLoaded  = false;
+bool   isFirstConnect   = true;
 
-unsigned long relay1OnAt = 0;      // cooldown timestamp relay1
-unsigned long relay2OnAt = 0;      // cooldown timestamp relay2
+unsigned long relay1OnAt = 0;
+unsigned long relay2OnAt = 0;
 
-// ─── pH Sensor Variables ──────────────────────────────────────────────────────
+
 int               phBuffer[10], phTemp;
 unsigned long int phAvgVal;
-float             calibration_value = 22.84f;  // offset kalibrasi (disimpan NVS)
-float             phSlope           = -5.70f;  // slope kalibrasi  (disimpan NVS)
+float             calibration_value = 22.84f;
+float             phSlope           = -5.70f;
 
-// ─── Calibration Mode ────────────────────────────────────────────────────────
+
 WebServer         calibServer(80);
 bool              calibMode      = false;
 unsigned long     btnPressStart  = 0;
 bool              btnWasPressed  = false;
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  FORWARD DECLARATIONS
-// ─────────────────────────────────────────────────────────────────────────────
+
 void publishRelayState(int relayId, bool state);
 void setRelay1(bool state, bool publish = true);
 void setRelay2(bool state, bool publish = true);
 
-// ═══════════════════════════════════════════════════════════════════
-//  PREFERENCES (NVS) — simpan config ke flash
-// ═══════════════════════════════════════════════════════════════════
+
 void saveConfig() {
   prefs.begin("hydro-cfg", false);
   prefs.putString("ws_host",  cfgWsHost);
@@ -135,9 +113,7 @@ void loadCalibration() {
   Serial.printf("[NVS] Calibration loaded: slope=%.4f offset=%.4f\n", phSlope, calibration_value);
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  WiFiManager — setup WiFi + custom parameters
-// ═══════════════════════════════════════════════════════════════════
+
 bool needSaveConfig = false;
 
 void saveConfigCallback() {
@@ -147,7 +123,7 @@ void saveConfigCallback() {
 void setupWiFiManager() {
   WiFiManager wm;
 
-  // Custom parameter untuk portal web
+
   WiFiManagerParameter paramWsHost("ws_host",  "WebSocket Host",    cfgWsHost,  80);
   WiFiManagerParameter paramWsPath("ws_path",  "WebSocket Path",    cfgWsPath,  40);
   WiFiManagerParameter paramApi   ("api_base", "API Base URL",      cfgApiBase, 120);
@@ -159,11 +135,11 @@ void setupWiFiManager() {
   wm.addParameter(&paramUser);
 
   wm.setSaveConfigCallback(saveConfigCallback);
-  wm.setConfigPortalTimeout(180);  // portal timeout 3 menit
-  wm.setAPClientCheck(true);       // auto restart jika tidak ada client
+  wm.setConfigPortalTimeout(180);
+  wm.setAPClientCheck(true);
 
   Serial.println("[WiFi] Connecting...");
-  // AP: "HydroESP32" password: "12345678"
+
   if (!wm.autoConnect("HydroESP32", "12345678")) {
     Serial.println("[WiFi] Failed to connect. Restarting...");
     delay(3000);
@@ -182,9 +158,7 @@ void setupWiFiManager() {
   Serial.println(WiFi.localIP());
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  pH SENSOR
-// ═══════════════════════════════════════════════════════════════════
+
 /**
  * Baca nilai pH dari sensor analog.
  * ───────────────────────────────────────────────────────────────────
@@ -199,7 +173,7 @@ void setupWiFiManager() {
  *   Sesuaikan 'calibration_value' (baris global di atas) dengan
  *   hasil pengukuran di buffer pH 4.0 dan pH 7.0 Anda.
  */
-// Helper: baca voltase mentah (dipakai juga oleh calib server)
+
 float readVoltageRaw() {
   int buf[10], tmp; unsigned long acc = 0;
   for (int i = 0; i < 10; i++) { buf[i] = analogRead(PH_SENSOR_PIN); delay(30); }
@@ -218,9 +192,7 @@ float readPH() {
   return constrain(phSlope * volt + calibration_value, 0.0f, 14.0f);
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  CALIBRATION WEB SERVER — HTML (PROGMEM)
-// ═══════════════════════════════════════════════════════════════════
+
 const char CALIB_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html><html lang="id"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
@@ -313,7 +285,7 @@ setInterval(poll,1500);poll();
 </script></body></html>
 )rawliteral";
 
-// ── Handlers ──────────────────────────────────────────────────────
+
 void hCalibRoot() { calibServer.send_P(200, "text/html", CALIB_HTML); }
 
 void hCalibRead() {
@@ -351,7 +323,7 @@ void hCalib1pt() {
 
 void hCalibExit() { calibServer.send(200, "text/plain", "OK"); delay(1500); ESP.restart(); }
 
-// ── startCalibrationMode ──────────────────────────────────────────
+
 void startCalibrationMode() {
   calibMode = true;
   Serial.println("\n[CALIB] ═══ Masuk Mode Kalibrasi pH ═══");
@@ -372,9 +344,7 @@ void startCalibrationMode() {
   Serial.println("[CALIB] Web server aktif.");
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  RELAY CONTROL
-// ═══════════════════════════════════════════════════════════════════
+
 void publishRelayState(int relayId, bool state) {
   if (!wsConnected) return;
   StaticJsonDocument<160> doc;
@@ -403,44 +373,40 @@ void setRelay2(bool state, bool publish) {
   if (publish) publishRelayState(2, state);
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  AUTO MODE — kontrol relay berdasarkan pH vs threshold
-// ═══════════════════════════════════════════════════════════════════
+
 void autoModeControl(float ph) {
   if (currentMode != "otomatis") return;
 
   unsigned long now = millis();
 
-  // pH terlalu TINGGI (basa) → nyalakan pompa Asam (relay1)
+
   if (ph > threshold + PH_DEAD_BAND) {
     if (!relay1State) {
       setRelay1(true);
     }
-    // Matikan relay Basa jika sedang ON dan cooldown selesai
+
     if (relay2State && (now - relay2OnAt > RELAY_MIN_ON_TIME)) {
       setRelay2(false);
     }
   }
-  // pH terlalu RENDAH (asam) → nyalakan pompa Basa (relay2)
+
   else if (ph < threshold - PH_DEAD_BAND) {
     if (!relay2State) {
       setRelay2(true);
     }
-    // Matikan relay Asam jika sedang ON dan cooldown selesai
+
     if (relay1State && (now - relay1OnAt > RELAY_MIN_ON_TIME)) {
       setRelay1(false);
     }
   }
-  // pH dalam zona aman → matikan semua (setelah cooldown)
+
   else {
     if (relay1State && (now - relay1OnAt > RELAY_MIN_ON_TIME)) setRelay1(false);
     if (relay2State && (now - relay2OnAt > RELAY_MIN_ON_TIME)) setRelay2(false);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  API — fetch threshold dari backend saat pertama boot
-// ═══════════════════════════════════════════════════════════════════
+
 void fetchThresholdFromAPI() {
   if (WiFi.status() != WL_CONNECTED) return;
 
@@ -472,13 +438,10 @@ void fetchThresholdFromAPI() {
   } else {
     Serial.printf("[API] HTTP error: %d\n", code);
   }
-
   http.end();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  API — fetch mode dari backend saat boot
-// ═══════════════════════════════════════════════════════════════════
+
 void fetchModeFromAPI() {
   if (WiFi.status() != WL_CONNECTED) return;
 
@@ -513,9 +476,7 @@ void fetchModeFromAPI() {
   http.end();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  WebSocket — message handler
-// ═══════════════════════════════════════════════════════════════════
+
 bool parseBool(JsonVariant v) {
   if (v.is<bool>())   return v.as<bool>();
   if (v.is<int>())    return v.as<int>() == 1;
@@ -529,35 +490,35 @@ void handleWsMessage(String& topic, JsonVariant payload) {
   String topicMode    = String("data/mode/user/")      + cfgUserId;
   String topicThresh  = String("data/treshold/user/")  + cfgUserId;
 
-  // ── Relay 1 (mode manual saja) ──────────────────────────────────
+
   if (topic == topicRelay1) {
     if (currentMode == "manual") {
       bool newState = parseBool(payload);
       if (newState != relay1State) {
-        setRelay1(newState, false);  // jangan re-publish (app yg kirim)
+        setRelay1(newState, false);
       }
     }
     return;
   }
 
-  // ── Relay 2 (mode manual saja) ──────────────────────────────────
+
   if (topic == topicRelay2) {
     if (currentMode == "manual") {
       bool newState = parseBool(payload);
       if (newState != relay2State) {
-        setRelay2(newState, false);  // jangan re-publish
+        setRelay2(newState, false);
       }
     }
     return;
   }
 
-  // ── Mode otomatis/manual ─────────────────────────────────────────
+
   if (topic == topicMode) {
     String newMode = payload.as<String>();
     if (newMode == "otomatis" || newMode == "manual") {
       currentMode = newMode;
       Serial.println("[Mode] Changed to: " + currentMode);
-      // Saat beralih ke manual, matikan relay yang menyala via auto
+
       if (currentMode == "manual") {
         if (relay1State) setRelay1(false);
         if (relay2State) setRelay2(false);
@@ -566,8 +527,7 @@ void handleWsMessage(String& topic, JsonVariant payload) {
     return;
   }
 
-  // ── Update threshold via WebSocket ──────────────────────────────
-  // (setelah boot, tidak perlu API lagi — update datang dari app)
+
   if (topic == topicThresh) {
     float newVal = 0.0f;
     if (payload.is<float>() || payload.is<int>()) {
@@ -591,7 +551,7 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
       wsConnected = true;
       Serial.println("[WS] ✅ Connected");
 
-      // Subscribe ke semua topic yang diperlukan
+
       const char* topics[] = {
         "data/relay1/user/",
         "data/relay2/user/",
@@ -608,8 +568,7 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
         Serial.println("[WS] Subscribed: " + String(t) + cfgUserId);
       }
 
-      // Saat pertama kali boot: pastikan relay dalam kondisi OFF
-      // dan beritahu semua subscriber (app) bahwa relay mati
+
       if (isFirstConnect) {
         isFirstConnect = false;
         relay1State = false;
@@ -652,35 +611,33 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  SETUP
-// ═══════════════════════════════════════════════════════════════════
+
 void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println("\n\n\u2550\u2550\u2550 Hydroponic pH Controller \u2550\u2550\u2550");
 
-  // ── GPIO ──────────────────────────────────────────────────────────
+
   pinMode(RELAY1_PIN,   OUTPUT);
   pinMode(RELAY2_PIN,   OUTPUT);
-  pinMode(CALIB_BTN_PIN, INPUT_PULLUP);  // D0/BOOT button
+  pinMode(CALIB_BTN_PIN, INPUT_PULLUP);
   digitalWrite(RELAY1_PIN, LOW);
   digitalWrite(RELAY2_PIN, LOW);
 
-  // ── Load kalibrasi dari NVS ──────────────────────────────────────────────
+
   loadCalibration();
 
-  // ── Cek tombol D0 saat boot ────────────────────────────────────────────
+
   if (digitalRead(CALIB_BTN_PIN) == LOW) {
     Serial.println("[CALIB] D0 ditekan saat boot \u2192 mode kalibrasi");
     startCalibrationMode();
-    return;   // skip normal setup, loop() akan handle calibServer
+    return;
   }
 
-  // ── Load config dari NVS ───────────────────────────────────────────────
+
   loadConfig();
 
-  // ── Load threshold dari NVS (jika ada) ────────────────────────────────
+
   float stored = loadThreshold();
   if (stored > 0.0f) {
     threshold       = stored;
@@ -690,18 +647,18 @@ void setup() {
     Serial.println("[NVS] No threshold saved yet.");
   }
 
-  // ── WiFiManager ──────────────────────────────────────────────────────────
+
   setupWiFiManager();
 
-  // ── Fetch threshold dari API (selalu coba saat boot) ─────────────────
+
   fetchThresholdFromAPI();
   if (!thresholdLoaded) { threshold = 6.5f; Serial.printf("[Threshold] Default: %.2f\n", threshold); }
 
-  // ── Fetch mode dari API ───────────────────────────────────────────────
+
   fetchModeFromAPI();
   Serial.println("[Mode] Initial mode: " + currentMode);
 
-  // ── WebSocket ───────────────────────────────────────────────────────────
+
   webSocket.beginSSL(cfgWsHost, 443, cfgWsPath);
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
@@ -711,14 +668,12 @@ void setup() {
   Serial.println("\u2550\u2550\u2550 Setup selesai \u2550\u2550\u2550\n");
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  LOOP
-// ═══════════════════════════════════════════════════════════════════
+
 unsigned long lastPhSend   = 0;
 unsigned long lastWifiCheck= 0;
 
 void loop() {
-  // ── Mode Kalibrasi: handle web server, skip semua logik normal ──────
+
   if (calibMode) {
     calibServer.handleClient();
     return;
@@ -727,7 +682,7 @@ void loop() {
   webSocket.loop();
   unsigned long now = millis();
 
-  // ── Deteksi long-press D0 (3 detik) untuk masuk kalibrasi ──────────
+
   if (digitalRead(CALIB_BTN_PIN) == LOW) {
     if (!btnWasPressed) { btnWasPressed = true; btnPressStart = now; }
     else if (now - btnPressStart >= CALIB_BTN_HOLD_MS) {
@@ -739,7 +694,7 @@ void loop() {
     btnWasPressed = false;
   }
 
-  // ── Cek koneksi WiFi setiap 30 detik ──────────────────────────────
+
   if (now - lastWifiCheck >= 30000) {
     lastWifiCheck = now;
     if (WiFi.status() != WL_CONNECTED) {
@@ -748,7 +703,7 @@ void loop() {
     }
   }
 
-  // ── Baca & kirim pH setiap PH_SEND_INTERVAL ───────────────────────
+
   if (now - lastPhSend >= PH_SEND_INTERVAL) {
     lastPhSend = now;
     float ph = readPH();
