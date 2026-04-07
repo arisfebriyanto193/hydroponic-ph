@@ -15,13 +15,16 @@ let latestPhData = null;
 
 
 
-function getMaxRecords() {
+async function getMaxRecords(userId) {
 //ambil max records dari database
-  const maxRecords = db.query(`SELECT max_records FROM settings WHERE user_id = ?`, [USER_ID]);
-  return maxRecords;
+  try {
+    const [rows] = await db.query(`SELECT max_records FROM settings WHERE user_id = ?`, [userId]);
+    return rows.length > 0 ? rows[0].max_records || 250 : 250;
+  } catch (err) {
+    console.error('Error getting max records:', err);
+    return 250;
+  }
 }
-
-const MAX_RECORDS = getMaxRecords();
 
 // Cron job berjalan setiap kelipatan 5 menit (contoh: 00:00, 00:05, 00:10, dst)
 cron.schedule('*/5 * * * *', async () => {
@@ -35,6 +38,7 @@ cron.schedule('*/5 * * * *', async () => {
     
     if (!isNaN(phValue)) {
       try {
+        const MAX_RECORDS = await getMaxRecords(USER_ID);
         console.log(`[DB Cron] MAX_RECORDS: ${MAX_RECORDS}`);
         // Hitung jumlah data yang sudah ada untuk user ini
         const [[{ total }]] = await db.query(

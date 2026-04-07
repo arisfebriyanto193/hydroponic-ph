@@ -1,7 +1,15 @@
 const db = require('./db');
 
 // Maksimum jumlah data yang disimpan per user (harus sama dengan di wsClient.js)
-const MAX_RECORDS = 250;
+async function getMaxRecords(userId) {
+  try {
+    const [rows] = await db.query(`SELECT max_records FROM settings WHERE user_id = ?`, [userId]);
+    return rows.length > 0 ? rows[0].max_records || 250 : 250;
+  } catch (err) {
+    console.error('Error getting max records:', err);
+    return 250;
+  }
+}
 
 // Cleanup interval: jalankan setiap 1 jam sebagai safety net
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 Jam
@@ -14,6 +22,8 @@ async function enforceCircularBuffer() {
     const [users] = await db.query('SELECT DISTINCT user_id FROM ph_logs');
 
     for (const { user_id } of users) {
+      const MAX_RECORDS = await getMaxRecords(user_id);
+      
       const [[{ total }]] = await db.query(
         `SELECT COUNT(*) AS total FROM ph_logs WHERE user_id = ?`,
         [user_id]
