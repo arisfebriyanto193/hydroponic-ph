@@ -17,7 +17,7 @@ let latestPhData = null;
 
 function getMaxRecords() {
 //ambil max records dari database
-  const maxRecords = db.query(`SELECT max_records FROM device_states WHERE user_id = ?`, [USER_ID]);
+  const maxRecords = db.query(`SELECT max_records FROM settings WHERE user_id = ?`, [USER_ID]);
   return maxRecords;
 }
 
