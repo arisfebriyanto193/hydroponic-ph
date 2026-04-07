@@ -12,7 +12,16 @@ const USER_ID = '9911';
 let latestPhData = null; 
 
 // Maksimum jumlah data yang disimpan per user (circular buffer)
-const MAX_RECORDS = 250;
+
+
+
+function getMaxRecords() {
+//ambil max records dari database
+  const maxRecords = db.query(`SELECT max_records FROM device_states WHERE user_id = ?`, [USER_ID]);
+  return maxRecords;
+}
+
+const MAX_RECORDS = getMaxRecords();
 
 // Cron job berjalan setiap kelipatan 5 menit (contoh: 00:00, 00:05, 00:10, dst)
 cron.schedule('*/5 * * * *', async () => {
@@ -26,6 +35,7 @@ cron.schedule('*/5 * * * *', async () => {
     
     if (!isNaN(phValue)) {
       try {
+        console.log(`[DB Cron] MAX_RECORDS: ${MAX_RECORDS}`);
         // Hitung jumlah data yang sudah ada untuk user ini
         const [[{ total }]] = await db.query(
           `SELECT COUNT(*) AS total FROM ph_logs WHERE user_id = ?`,
