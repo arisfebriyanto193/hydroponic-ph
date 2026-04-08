@@ -16,7 +16,6 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 #define PH_SEND_INTERVAL     1500
 #define RELAY_MIN_ON_TIME    3000
-#define PH_DEAD_BAND         0.15f
 #define CALIB_BTN_HOLD_MS    3000
 #define LCD_PAGE_INTERVAL    3000
 
@@ -36,6 +35,7 @@ bool   relay1State      = false;
 bool   relay2State      = false;
 String currentMode      = "manual";
 float  threshold        = 6.5f;
+float  phDeadband       = 0.5f;
 bool   thresholdLoaded  = false;
 bool   isFirstConnect   = true;
 bool   isAPMode         = false;
@@ -78,10 +78,20 @@ h1{text-align:center;font-size:1.5rem;background:linear-gradient(90deg,#00d2ff,#
 .lbl{font-size:.8rem;color:#a0a0c0;text-transform:uppercase}
 .row{display:flex;gap:10px}
 .row>div{flex:1}
+input{width:100%;box-sizing:border-box;padding:10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:6px;color:#fff;}
+input:focus{outline:none;border-color:#00d2ff}
 </style></head><body><div class="c">
 <h1>💧 Hydroponic Dashboard</h1>
 <div class="card"><div class="lbl">pH Saat Ini</div><div class="v" id="phv">—</div>
-<div class="lbl">Threshold: <span id="thv">—</span> | Mode: <span id="mdv">—</span></div></div>
+<div class="lbl">Threshold: <span id="thv">—</span> ± <span id="dbv">—</span> | Mode: <span id="mdv">—</span></div></div>
+<div class="card">
+<div class="lbl">Atur Threshold & Toleransi (±)</div>
+<div class="row" style="margin-top:10px; align-items:center;">
+<div><input type="number" id="inTh" step="0.1" placeholder="pH"></div>
+<div><input type="number" id="inDb" step="0.01" placeholder="Toleransi ±"></div>
+<div style="flex:0.5;"><button class="btn cfg" style="margin:0;" onclick="svTh()">Set</button></div>
+</div>
+</div>
 <div class="card"><div class="lbl">Kontrol Relay Manual</div>
 <div class="row">
 <div><button id="r1" class="btn off" onclick="t(1)">Asam OFF</button></div>
@@ -96,6 +106,9 @@ h1{text-align:center;font-size:1.5rem;background:linear-gradient(90deg,#00d2ff,#
 function fetchS(){fetch('/api/status').then(r=>r.json()).then(d=>{
 document.getElementById('phv').innerText=d.ph.toFixed(2);
 document.getElementById('thv').innerText=d.threshold.toFixed(2);
+document.getElementById('dbv').innerText=d.deadband.toFixed(2);
+if(document.activeElement !== document.getElementById('inTh')) document.getElementById('inTh').value=d.threshold.toFixed(2);
+if(document.activeElement !== document.getElementById('inDb')) document.getElementById('inDb').value=d.deadband.toFixed(2);
 document.getElementById('mdv').innerText=d.mode;
 const rb1=document.getElementById('r1');const rb2=document.getElementById('r2');
 rb1.className='btn '+(d.r1?'on':'off');rb1.innerText='Asam '+(d.r1?'ON':'OFF');
@@ -105,6 +118,10 @@ mdb.innerText=d.mode==='manual'?'Ubah Mode ke Otomatis':'Ubah Mode ke Manual';
 }).catch(()=>{});}
 function t(id){fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'target=relay'+id}).then(()=>fetchS());}
 function tm(){fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'target=mode'}).then(()=>fetchS());}
+function svTh(){
+  const th=document.getElementById('inTh').value, db=document.getElementById('inDb').value;
+  if(th&&db) fetch('/api/setTreshold',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'thresh='+th+'&dband='+db}).then(()=>fetchS());
+}
 setInterval(fetchS,2000);fetchS();
 </script></body></html>
 )rawliteral";
@@ -290,6 +307,20 @@ float loadThreshold() {
   return val;
 }
 
+void saveDeadband(float val) {
+  prefs.begin("hydro-cfg", false);
+  prefs.putFloat("deadband", val);
+  prefs.end();
+  Serial.printf("[NVS] Deadband saved: %.2f\n", val);
+}
+
+float loadDeadband() {
+  prefs.begin("hydro-cfg", true);
+  float val = prefs.getFloat("deadband", -1.0f);
+  prefs.end();
+  return val;
+}
+
 void saveCalibration() {
   prefs.begin("hydro-cfg", false);
   prefs.putFloat("ph_slope",  phSlope);
@@ -368,6 +399,7 @@ void setupServerRoutes() {
   server.on("/api/status", HTTP_GET, []() {
     float ph = readPH();
     String j = "{\"ph\":" + String(ph,2) + ",\"threshold\":" + String(threshold,2) + 
+               ",\"deadband\":" + String(phDeadband,2) +
                ",\"mode\":\"" + currentMode + "\",\"r1\":" + (relay1State?"true":"false") + 
                ",\"r2\":" + (relay2State?"true":"false") + "}";
     server.send(200, "application/json", j);
@@ -401,6 +433,30 @@ void setupServerRoutes() {
     server.send(200, "text/plain", "OK");
   });
   
+  server.on("/api/setTreshold", HTTP_POST, []() {
+    if (server.hasArg("thresh") && server.hasArg("dband")) {
+      float t = server.arg("thresh").toFloat();
+      float d = server.arg("dband").toFloat();
+      if (t > 0.0f) {
+        threshold = t;
+        saveThreshold(threshold);
+      }
+      if (d > 0.0f) {
+        phDeadband = d;
+        saveDeadband(phDeadband);
+      }
+      if (wsConnected && !isAPMode) {
+        StaticJsonDocument<160> doc;
+        doc["action"]  = "publish";
+        doc["topic"]   = String("data/treshold/user/") + cfgUserId;
+        doc["payload"] = threshold;
+        String msg; serializeJson(doc, msg);
+        webSocket.sendTXT(msg);
+      }
+    }
+    server.send(200, "text/plain", "OK");
+  });
+
   server.on("/api/saveConfig", HTTP_POST, []() {
     if(server.hasArg("ssid")) strncpy(cfgWifiSsid, server.arg("ssid").c_str(), sizeof(cfgWifiSsid));
     if(server.hasArg("pass")) strncpy(cfgWifiPass, server.arg("pass").c_str(), sizeof(cfgWifiPass));
@@ -492,11 +548,11 @@ void autoModeControl(float ph) {
   if (currentMode != "otomatis") return;
   unsigned long now = millis();
 
-  if (ph > threshold + PH_DEAD_BAND) {
+  if (ph > threshold + phDeadband) {
     if (!relay1State) setRelay1(true);
     if (relay2State && (now - relay2OnAt > RELAY_MIN_ON_TIME)) setRelay2(false);
   }
-  else if (ph < threshold - PH_DEAD_BAND) {
+  else if (ph < threshold - phDeadband) {
     if (!relay2State) setRelay2(true);
     if (relay1State && (now - relay1OnAt > RELAY_MIN_ON_TIME)) setRelay1(false);
   }
@@ -566,7 +622,7 @@ void handleWsMessage(String& topic, JsonVariant payload) {
   String topicRelay2  = String("data/relay2/user/")    + cfgUserId;
   String topicMode    = String("data/mode/user/")      + cfgUserId;
   String topicThresh  = String("data/treshold/user/")  + cfgUserId;
-
+  
   if (topic == topicRelay1) {
     if (currentMode == "manual") {
       bool newState = parseBool(payload);
@@ -693,6 +749,12 @@ void setup() {
     threshold = stored;
     thresholdLoaded = true;
     Serial.printf("[NVS] Threshold loaded: %.2f\n", threshold);
+  }
+
+  float dbStored = loadDeadband();
+  if (dbStored > 0.0f) {
+    phDeadband = dbStored;
+    Serial.printf("[NVS] Deadband loaded: %.2f\n", phDeadband);
   }
 
   // Setup WiFi or AP based on config & availability
