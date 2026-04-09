@@ -17,14 +17,11 @@ const WS_URL  = process.env.EXPO_PUBLIC_WS_URL   || 'wss://server-iot-qbyte.qbyt
 const API_URL = process.env.EXPO_PUBLIC_API_BASE  || 'http://192.168.6.236:3000';
 const USER_ID = '9911';
 
-// ─── Color Palette ────────────────────────────────────────────────────────────
 const C = {
-  // backgrounds
-  bg:          '#E8E4DC',   // warm parchment
+  bg:          '#E8E4DC',
   surface:     '#FFFFFF',
-  surfaceAlt:  '#F4F1EA',   // slightly tinted white for alternating rows
+  surfaceAlt:  '#F4F1EA',
 
-  // primary green (rich, not neon)
   p900:  '#1A3526',
   p700:  '#2B5935',
   p500:  '#3E7A4A',
@@ -32,21 +29,16 @@ const C = {
   p100:  '#C4DFC9',
   p50:   '#EAF2EB',
 
-  // neutral
-  ink:   '#1A2920',   // almost-black text
-  muted: '#5A7060',   // secondary text
-  hint:  '#8FA897',   // placeholder / caption
-  line:  '#D0DDD4',   // border
+  ink:   '#1A2920',
+  muted: '#5A7060',
+  hint:  '#8FA897',
+  line:  '#D0DDD4',
 
-  // semantic
   danger:  '#C94040',
   success: '#2D8F70',
   warn:    '#C07A2A',
 };
 
-// ─── Typography scale ─────────────────────────────────────────────────────────
-// Using a single readable font stack. On iOS SF Pro is used, on Android Roboto.
-// If you want a custom font, load it via expo-font and set fontFamily below.
 const T = {
   xs:   { fontSize: 11, letterSpacing: 0.3 },
   sm:   { fontSize: 13 },
@@ -56,7 +48,6 @@ const T = {
   h1:   { fontSize: 36, letterSpacing: -1 },
 };
 
-// ─── Small helpers ─────────────────────────────────────────────────────────────
 function Dot({ color, size = 8 }: { color: string; size?: number }) {
   return <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color }} />;
 }
@@ -69,12 +60,10 @@ function Badge({ label, color }: { label: string; color: string }) {
   );
 }
 
-// ─── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'history'>('dashboard');
   const [isOnline, setIsOnline]   = useState(false);
 
-  // Dashboard
   const [ph,               setPh]               = useState<number | null>(null);
   const [mode,             setMode]             = useState<'otomatis' | 'manual'>('manual');
   const [threshold,        setThreshold]        = useState<string>('6.5');
@@ -83,7 +72,6 @@ export default function App() {
   const [wsConnected,      setWsConnected]      = useState(false);
   const [realtimeHistory,  setRealtimeHistory]  = useState<any[]>([]);
 
-  // History
   const [selectedDate,  setSelectedDate]  = useState<Date>(new Date());
   const [showPicker,    setShowPicker]    = useState(false);
   const [historyData,   setHistoryData]   = useState<any[]>([]);
@@ -91,21 +79,13 @@ export default function App() {
 
   const ws                   = useRef<WebSocket | null>(null);
   const timeoutRef           = useRef<NodeJS.Timeout | null>(null);
-  // Grace period: abaikan update WS untuk relay/mode/threshold selama N ms
-  // setelah fetchInitialState() selesai, agar WS subscription response tidak
-  // menimpa state yang sudah diload dari DB.
   const ignoreWsStateUntil   = useRef<number>(0);
 
-  // ── WebSocket & initial fetch ───────────────────────────────────────────────
   useEffect(() => {
-    // 1. Load state awal dari DB (relay & threshold) sebelum WebSocket
     fetchInitialState().then(() => {
-      // 2. Baru connect WebSocket setelah data awal berhasil dimuat
       connectWebSocket();
     });
-    // 3. Load data chart dari DB langsung
     fetchInitialRealtimeHistory();
-    // 4. Interval fetch chart dari DB setiap 1 menit
     const id = setInterval(fetchInitialRealtimeHistory, 60_000);
     return () => {
       clearInterval(id);
@@ -114,10 +94,8 @@ export default function App() {
     };
   }, []);
 
-  // Load status relay & threshold dari DB via API saat app pertama dibuka
   const fetchInitialState = async () => {
     try {
-      // Fetch relay status dari DB
       const relayRes = await axios.get(`${API_URL}/api/relay?user=${USER_ID}`);
       if (relayRes.data?.success && relayRes.data.data) {
         const d = relayRes.data.data;
@@ -129,7 +107,6 @@ export default function App() {
       console.error('fetchInitialState (relay):', e);
     }
     try {
-      // Fetch threshold dari DB
       const trRes = await axios.get(`${API_URL}/api/tr?user=${USER_ID}`);
       if (trRes.data?.success && trRes.data.data) {
         const t = trRes.data.data.threshold;
@@ -138,13 +115,9 @@ export default function App() {
     } catch (e) {
       console.error('fetchInitialState (threshold):', e);
     }
-    // Setelah load dari DB selesai, set grace period 8 detik.
-    // Selama 8 detik ke depan, update relay/mode/threshold dari WebSocket
-    // akan diabaikan agar subscription response tidak menimpa data DB.
     ignoreWsStateUntil.current = Date.now() + 8_000;
   };
 
-  // Fetch data chart dari DB (dipanggil saat pertama buka & setiap 1 menit)
   const fetchInitialRealtimeHistory = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/ph?days=1&user=${USER_ID}`);
@@ -188,13 +161,10 @@ export default function App() {
   };
 
   const handleWsMessage = (topic: string, payload: any) => {
-    // Cek apakah masih dalam grace period (setelah load DB awal)
     const inGracePeriod = Date.now() < ignoreWsStateUntil.current;
 
     switch (topic) {
       case `data/ph/user/${USER_ID}`: {
-        // pH live tetap update dari WebSocket (tidak ada grace period untuk pH)
-        // Grafik hanya diupdate dari DB setiap 1 menit
         const val = typeof payload === 'object'
           ? (payload.pH ?? payload.sensor1 ?? parseFloat(payload))
           : parseFloat(payload);
@@ -207,21 +177,17 @@ export default function App() {
         break;
       }
       case `data/mode/user/${USER_ID}`:
-        // Abaikan selama grace period agar tidak timpa state dari DB
         if (!inGracePeriod) setMode(payload === 'otomatis' ? 'otomatis' : 'manual');
         break;
       case `data/relay1/user/${USER_ID}`:
-        // Abaikan selama grace period agar tidak timpa state dari DB
         if (!inGracePeriod)
           setRelay1(payload === true || payload === 'true' || payload === '1' || payload === 1);
         break;
       case `data/relay2/user/${USER_ID}`:
-        // Abaikan selama grace period agar tidak timpa state dari DB
         if (!inGracePeriod)
           setRelay2(payload === true || payload === 'true' || payload === '1' || payload === 1);
         break;
       case `data/treshold/user/${USER_ID}`:
-        // Abaikan selama grace period agar tidak timpa state dari DB
         if (!inGracePeriod)
           setThreshold(typeof payload === 'object' ? (payload.threshold ?? '6.5') : String(payload));
         break;
@@ -239,8 +205,6 @@ export default function App() {
     const next = mode === 'otomatis' ? 'manual' : 'otomatis';
     setMode(next);
 
-    // Saat beralih ke mode otomatis, pastikan threshold sudah ada nilainya
-    // dengan fetch dari API terlebih dahulu agar tidak undefined
     if (next === 'otomatis') {
       try {
         const res = await axios.get(`${API_URL}/api/tr?user=${USER_ID}`);
@@ -268,7 +232,6 @@ export default function App() {
     id === 1 ? setRelay1(next) : setRelay2(next);
   };
 
-  // ── History fetch ────────────────────────────────────────────────────────────
   const fetchHistoryByDate = async (date: Date) => {
     setHistoryLoading(true);
     const iso = new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
@@ -301,7 +264,6 @@ export default function App() {
     Linking.openURL(`${API_URL}/api/download/ph?user=${USER_ID}&days=7`)
       .catch(err => console.error(err));
 
-  // ── Chart ────────────────────────────────────────────────────────────────────
   const renderChart = (data: any[]) => {
     if (data.length === 0) return <ActivityIndicator color={C.p500} style={{ marginVertical: 24 }} />;
 
@@ -326,8 +288,8 @@ export default function App() {
           backgroundGradientFrom:  C.surface,
           backgroundGradientTo:    C.surface,
           decimalPlaces:           2,
-          color:   (o = 1) => `rgba(62, 122, 74, ${o})`,   // C.p500
-          labelColor: (o = 1) => `rgba(90, 112, 96, ${o})`, // C.muted
+          color:   (o = 1) => `rgba(62, 122, 74, ${o})`,
+          labelColor: (o = 1) => `rgba(90, 112, 96, ${o})`,
           propsForDots: { r: '4', strokeWidth: '2', stroke: C.p700 },
           propsForBackgroundLines: { strokeWidth: 0 },
         }}
@@ -337,7 +299,6 @@ export default function App() {
     );
   };
 
-  // ── pH status helper ─────────────────────────────────────────────────────────
   const phStatus = (v: number | null) => {
     if (v === null) return { label: '–', color: C.hint };
     if (v < 5.5)   return { label: 'Terlalu Asam', color: C.danger };
@@ -346,7 +307,6 @@ export default function App() {
   };
   const status = phStatus(ph);
 
-  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <View style={S.root}>
       <StatusBar style="dark" />
@@ -603,11 +563,9 @@ export default function App() {
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────────────────────────
 const S = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
 
-  // App Bar
   appBar: {
     backgroundColor: C.surface,
     paddingTop: Platform.OS === 'ios' ? 54 : 40,
@@ -634,7 +592,6 @@ const S = StyleSheet.create({
   },
   pillText: { fontSize: 12, fontWeight: '700' },
 
-  // Tab Bar
   tabBar: {
     flexDirection: 'row',
     backgroundColor: C.surface,
@@ -670,7 +627,6 @@ const S = StyleSheet.create({
     marginTop: 4,
   },
 
-  // Card
   card: {
     backgroundColor: C.surface,
     borderRadius: 18,
@@ -697,12 +653,10 @@ const S = StyleSheet.create({
     borderColor: C.p100,
   },
 
-  // pH display
   phBox: { alignItems: 'center', paddingVertical: 8 },
   phNum:  { fontSize: 64, fontWeight: '900', color: C.p700, letterSpacing: -2, lineHeight: 72 },
   phUnit: { fontSize: 13, color: C.muted, fontWeight: '600', marginTop: 2 },
 
-  // Settings
   settingName: { fontSize: 15, fontWeight: '700', color: C.ink, marginBottom: 3 },
   settingDesc: { fontSize: 12, color: C.muted },
   thresholdSection: {
@@ -733,7 +687,6 @@ const S = StyleSheet.create({
   },
   btnUpdateText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
 
-  // Relay Cards
   relayGrid: { flexDirection: 'row', gap: 14, marginBottom: 10 },
   relayCard: {
     flex: 1,
@@ -765,7 +718,6 @@ const S = StyleSheet.create({
   relayStatusRow:          { flexDirection: 'row', alignItems: 'center', gap: 5 },
   relayStatus:             { fontSize: 12, fontWeight: '600' },
 
-  // History - Filter
   filterRow:               { flexDirection: 'row', gap: 10, marginBottom: 0 },
   filterChip: {
     flex: 1,
@@ -798,7 +750,6 @@ const S = StyleSheet.create({
   },
   datePillText: { color: C.p700, fontWeight: '700', fontSize: 13 },
 
-  // Table
   tableHead: {
     flexDirection: 'row',
     backgroundColor: C.bg,
@@ -822,7 +773,6 @@ const S = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingVertical: 40, gap: 10 },
   emptyText:  { color: C.muted, fontWeight: '500', fontSize: 14 },
 
-  // Download Button
   btnDownload: {
     backgroundColor: C.p700,
     borderRadius: 16,

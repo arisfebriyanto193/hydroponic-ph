@@ -39,7 +39,6 @@ router.get('/mode', async (req, res) => {
 
 
 
-//ambil status relay 1/2
 router.get('/relay', async (req, res) => {
   try {
     const userId = req.query.user || '9911';
@@ -82,7 +81,7 @@ router.get('/ph', async (req, res) => {
   }
 });
 
-// GET /api/settings
+
 router.get('/settings', async (req, res) => {
   try {
     const userId = req.query.user || '9911';
