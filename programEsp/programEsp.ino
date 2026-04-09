@@ -249,7 +249,7 @@ function sv2(){
   if(Math.abs(v7-v4)<0.01){ss('Selisih voltase terlalu kecil! Cek larutan buffer.',false);return;}
   fetch('/calib2pt?v4='+v4+'&v7='+v7).then(r=>r.json()).then(d=>{
     if(d.ok)ss('✅ Slope='+d.slope.toFixed(4)+' Offset='+d.offset.toFixed(4),true);
-    else ss('❌ '+d.msg,false);}).catch(()=>ss('❌ Koneksi gagal',false));}
+    else ss('❌ '+d.msg am,false);}).catch(()=>ss('❌ Koneksi gagal',false));}
 function c1p(){
   const r=parseFloat(document.getElementById('rp').value);
   if(isNaN(r)||r<0||r>14){ss('Masukkan nilai pH 0–14',false);return;}
