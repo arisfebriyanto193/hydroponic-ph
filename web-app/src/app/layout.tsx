@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Hydroponics Dashboard',
-  description: 'Advanced Hydroponics Control Center',
+  title: 'IoT Hydroponics Control',
+  description: 'Hydroponics Control Dashboard',
 };
 
 export default function RootLayout({
@@ -14,7 +14,7 @@ export default function RootLayout({
   return (
     <html lang="id">
       <body>
-        <div className="app-layout">
+        <div className="app-container">
           {children}
         </div>
       </body>
