@@ -3,6 +3,12 @@
 # dependencies
 Hidroponik/node_modules/
 backend/node_modules/
+web-app/node_modules/
+web-app/.next/
+web-app/out/
+web-app/.env
+
+
 
 # Expo
 Hidroponik/.expo/
