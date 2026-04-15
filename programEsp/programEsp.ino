@@ -45,8 +45,10 @@ unsigned long relay2OnAt = 0;
 
 int               phBuffer[10], phTemp;
 unsigned long int phAvgVal;
-float             calibration_value = 22.84f;
-float             phSlope           = -5.70f;
+float             calib_ph_mid     = 6.86f;
+float             calib_volt_mid   = 2.50f;
+float             calib_slope_acid = -4.25f;
+float             calib_slope_base = -4.25f;
 
 bool              calibMode      = false;
 unsigned long     btnPressStart  = 0;
@@ -211,18 +213,39 @@ h1{text-align:center;font-size:1.4rem;font-weight:700;background:linear-gradient
 </div>
 <div class="card"><h2>⚙️ Kalibrasi Aktif</h2>
   <div class="vals">
-    <div class="vi"><div class="lb">Slope</div><div class="vl" id="cs">—</div></div>
-    <div class="vi"><div class="lb">Offset</div><div class="vl" id="co">—</div></div>
+    <div class="vi"><div class="lb">Val Netral</div><div class="vl" id="cpm">—</div></div>
+    <div class="vi"><div class="lb">Slp Asam</div><div class="vl" id="csa">—</div></div>
+    <div class="vi"><div class="lb">Slp Basa</div><div class="vl" id="csb">—</div></div>
   </div>
 </div>
-<div class="card"><h2>📐 Kalibrasi 2 Titik (Direkomendasikan)</h2>
-  <div class="step">1️⃣ Celupkan sensor ke buffer <strong>pH 4.0</strong>, tunggu stabil ±30 detik, tekan tombol.</div>
-  <button class="btn bb" onclick="sp4()">📥 Ambil Sampel pH 4.0</button>
-  <div class="smpl" id="s4">Buffer pH 4.0 → <span id="v4d">—</span> V ✅</div>
-  <div class="step">2️⃣ Celupkan sensor ke buffer <strong>pH 7.0</strong>, tunggu stabil, tekan tombol.</div>
-  <button class="btn bb" onclick="sp7()">📥 Ambil Sampel pH 7.0</button>
-  <div class="smpl" id="s7">Buffer pH 7.0 → <span id="v7d">—</span> V ✅</div>
-  <button class="btn bg" onclick="sv2()" id="b2" style="display:none">✅ Hitung &amp; Simpan Kalibrasi 2 Titik</button>
+<div class="card"><h2>📐 Kalibrasi Presisi (2 atau 3 Titik)</h2>
+  <div class="step">Set 2 atau 3 cairan buffer. Isi form, celupkan, lalu ambil. (Bilas setiap mengganti cairan, biarkan form ke-3 abaikan jika hanya 2 titik).</div>
+  
+  <div class="ig" style="margin-bottom:8px;"><label>Titik 1 (misal pH Asam 4.01)</label>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <input type="number" id="p1" step="0.01" value="4.01" style="flex:1;margin:0;">
+      <button class="btn bg" style="margin:0;flex:1.5;padding:10px;" onclick="sp(1)">📥 Ambil</button>
+    </div>
+    <div class="smpl" id="s1" style="margin-top:6px">Terbaca → <span id="v1d">—</span> V ✅</div>
+  </div>
+
+  <div class="ig" style="margin-bottom:8px;"><label>Titik 2 (misal pH Netral 6.86)</label>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <input type="number" id="p2" step="0.01" value="6.86" style="flex:1;margin:0;">
+      <button class="btn bg" style="margin:0;flex:1.5;padding:10px;" onclick="sp(2)">📥 Ambil</button>
+    </div>
+    <div class="smpl" id="s2" style="margin-top:6px">Terbaca → <span id="v2d">—</span> V ✅</div>
+  </div>
+
+  <div class="ig" style="margin-bottom:8px;"><label>Titik 3 (misal pH Basa 9.18) - Opsi</label>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <input type="number" id="p3" step="0.01" value="9.18" style="flex:1;margin:0;">
+      <button class="btn bg" style="margin:0;flex:1.5;padding:10px;" onclick="sp(3)">📥 Ambil</button>
+    </div>
+    <div class="smpl" id="s3" style="margin-top:6px">Terbaca → <span id="v3d">—</span> V ✅</div>
+  </div>
+
+  <button class="btn bb" onclick="svM()" id="bm" style="display:none;margin-top:12px">✅ Hitung &amp; Simpan Kalibrasi Multi-Titik</button>
 </div>
 <div class="card"><h2>🎯 Kalibrasi 1 Titik (Cepat)</h2>
   <div class="step">Celupkan sensor ke larutan buffer yang diketahui, tunggu stabil, isi nilai pH referensi lalu klik Kalibrasi.</div>
@@ -234,27 +257,48 @@ h1{text-align:center;font-size:1.4rem;font-weight:700;background:linear-gradient
 <a href="/" class="btn bb" style="margin-bottom:10px">🔙 Kembali ke Dashboard</a>
 <button class="btn br" onclick="ex()">🔄 Selesai &amp; Restart ESP32</button>
 </div><script>
-let v4=null,v7=null,lv=0;
+let v=[null,null,null,null], lv=0;
 function poll(){fetch('/read').then(r=>r.json()).then(d=>{
   document.getElementById('pv').textContent=d.ph.toFixed(2);
   document.getElementById('vv').textContent=d.volt.toFixed(4)+' V';
-  document.getElementById('cs').textContent=d.slope.toFixed(4);
-  document.getElementById('co').textContent=d.offset.toFixed(4);
+  if(document.getElementById('cpm')) document.getElementById('cpm').textContent=d.pmid.toFixed(2);
+  if(document.getElementById('csa')) document.getElementById('csa').textContent=d.sac.toFixed(3);
+  if(document.getElementById('csb')) document.getElementById('csb').textContent=d.sba.toFixed(3);
   lv=d.volt;}).catch(()=>{});}
-function sp4(){v4=lv;document.getElementById('v4d').textContent=v4.toFixed(4);document.getElementById('s4').style.display='block';if(v7!==null)document.getElementById('b2').style.display='block';}
-function sp7(){v7=lv;document.getElementById('v7d').textContent=v7.toFixed(4);document.getElementById('s7').style.display='block';if(v4!==null)document.getElementById('b2').style.display='block';}
+function sp(i){
+  v[i]=lv;
+  document.getElementById('v'+i+'d').textContent=v[i].toFixed(4);
+  document.getElementById('s'+i).style.display='block';
+  let count = 0;
+  for(let j=1; j<=3; j++) if(v[j]!==null) count++;
+  if(count >= 2) document.getElementById('bm').style.display='block';
+}
 function ss(m,ok){const e=document.getElementById('sb');e.textContent=m;e.className='st '+(ok?'ok':'err');e.style.display='block';setTimeout(()=>e.style.display='none',5000);}
-function sv2(){
-  if(v4===null||v7===null){ss('Sampel belum lengkap!',false);return;}
-  if(Math.abs(v7-v4)<0.01){ss('Selisih voltase terlalu kecil! Cek larutan buffer.',false);return;}
-  fetch('/calib2pt?v4='+v4+'&v7='+v7).then(r=>r.json()).then(d=>{
-    if(d.ok)ss('✅ Slope='+d.slope.toFixed(4)+' Offset='+d.offset.toFixed(4),true);
-    else ss('❌ '+d.msg am,false);}).catch(()=>ss('❌ Koneksi gagal',false));}
+function svM(){
+  let pts = [];
+  for(let i=1; i<=3; i++){
+    if(v[i]!==null){
+      let p = parseFloat(document.getElementById('p'+i).value);
+      if(!isNaN(p)) pts.push({p:p, v:v[i]});
+    }
+  }
+  if(pts.length < 2) { ss('Minimal 2 titik sampel diperlukan!',false); return; }
+  let q="?";
+  for(let i=0; i<pts.length; i++){
+    q += "p"+(i+1)+"="+pts[i].p+"&v"+(i+1)+"="+pts[i].v;
+    if(i<pts.length-1) q+="&";
+  }
+  let endpoint = pts.length === 3 ? '/calib3pt' : '/calib2pt';
+  fetch(endpoint+q).then(r=>r.json()).then(d=>{
+    if(d.ok) ss('✅ Kalibrasi ' + pts.length + ' titik berhasil disimpan!', true);
+    else ss('❌ '+d.msg,false);
+  }).catch(()=>ss('❌ Koneksi gagal',false));
+}
 function c1p(){
   const r=parseFloat(document.getElementById('rp').value);
   if(isNaN(r)||r<0||r>14){ss('Masukkan nilai pH 0–14',false);return;}
   fetch('/calib1pt?ref='+r+'&volt='+lv).then(r=>r.json()).then(d=>{
-    if(d.ok)ss('✅ Offset baru: '+d.offset.toFixed(4),true);
+    if(d.ok)ss('✅ Offset 1-Titik disimpan',true);
     else ss('❌ '+d.msg,false);}).catch(()=>ss('❌ Koneksi gagal',false));}
 function ex(){if(confirm('Keluar dari mode kalibrasi dan restart ESP32?')){
   fetch('/exit').finally(()=>{document.body.innerHTML='<div style="background:linear-gradient(135deg,#0f0c29,#302b63);min-height:100vh;display:flex;align-items:center;justify-content:center;color:#38ef7d;font-size:1.2rem;font-family:sans-serif;">✅ Menyimpan &amp; Restart...</div>';});}}
@@ -323,66 +367,135 @@ float loadDeadband() {
 
 void saveCalibration() {
   prefs.begin("hydro-cfg", false);
-  prefs.putFloat("ph_slope",  phSlope);
-  prefs.putFloat("ph_offset", calibration_value);
+  prefs.putFloat("c_ph_m",   calib_ph_mid);
+  prefs.putFloat("c_v_m",    calib_volt_mid);
+  prefs.putFloat("c_s_aca",  calib_slope_acid);
+  prefs.putFloat("c_s_bas",  calib_slope_base);
   prefs.end();
-  Serial.printf("[NVS] Calibration saved: slope=%.4f offset=%.4f\n", phSlope, calibration_value);
+  Serial.println("[NVS] Calibration 3pt saved.");
 }
 
 void loadCalibration() {
   prefs.begin("hydro-cfg", true);
-  phSlope           = prefs.getFloat("ph_slope",  -5.70f);
-  calibration_value = prefs.getFloat("ph_offset", 22.84f);
+  calib_ph_mid     = prefs.getFloat("c_ph_m", 6.86f);
+  calib_volt_mid   = prefs.getFloat("c_v_m",  2.50f);
+  
+  float old_slope  = prefs.getFloat("ph_slope", -4.25f);
+  calib_slope_acid = prefs.getFloat("c_s_aca", old_slope);
+  calib_slope_base = prefs.getFloat("c_s_bas", old_slope);
+  
+  // Backward compatibility with raw 2-point
+  if (prefs.getFloat("c_ph_m", -1.0f) == -1.0f) {
+     float old_offset = prefs.getFloat("ph_offset", 17.70f);
+     calib_volt_mid = (6.86f - old_offset) / old_slope; 
+     calib_ph_mid = 6.86f;
+  }
   prefs.end();
-  Serial.printf("[NVS] Calibration loaded: slope=%.4f offset=%.4f\n", phSlope, calibration_value);
+  Serial.printf("[NVS] Calib: Vm=%.2f Pm=%.2f Sa=%.2f Sb=%.2f\n", calib_volt_mid, calib_ph_mid, calib_slope_acid, calib_slope_base);
 }
 
+float emaVoltage = -1.0f;
+
 float readVoltageRaw() {
-  int buf[10], tmp; unsigned long acc = 0;
-  for (int i = 0; i < 10; i++) { buf[i] = analogRead(PH_SENSOR_PIN); delay(30); }
-  for (int i = 0; i < 9; i++)
-    for (int j = i+1; j < 10; j++)
+  // Mengambil 40 sampel untuk kestabilan ekstra (filter noise ADC ESP32)
+  int buf[40], tmp; unsigned long acc = 0;
+  for (int i = 0; i < 40; i++) { buf[i] = analogRead(PH_SENSOR_PIN); delay(10); } // Total 400ms buffer
+  for (int i = 0; i < 39; i++)
+    for (int j = i+1; j < 40; j++)
       if (buf[i] > buf[j]) { tmp=buf[i]; buf[i]=buf[j]; buf[j]=tmp; }
-  for (int i = 2; i < 8; i++) acc += buf[i];
-  return (float)acc * 3.3f / 4095.0f / 6.0f;
+  // Ambil rata-rata dari 20 data tengah (buang 10 terendah dan 10 tertinggi)
+  for (int i = 10; i < 30; i++) acc += buf[i];
+  
+  float rawVolt = (float)acc * 3.3f / 4095.0f / 20.0f;
+  
+  // Implementasi Exponential Moving Average (EMA) untuk smoothing drastis
+  if (emaVoltage < 0.0f) {
+    emaVoltage = rawVolt; // Inisialisasi pertama kali
+  } else {
+    // 15% nilai sensor asli sekarang, 85% mengambil riwayat (meredam drastis lompatan noise akibat frekuensi listrik / WiFi ESP32)
+    emaVoltage = (0.15f * rawVolt) + (0.85f * emaVoltage);
+  }
+  
+  return emaVoltage;
 }
 
 float readPH() {
   float volt = readVoltageRaw();
-  return constrain(phSlope * volt + calibration_value, 0.0f, 14.0f);
+  float ph;
+  if (volt >= calib_volt_mid) {
+    ph = calib_ph_mid + calib_slope_acid * (volt - calib_volt_mid);
+  } else {
+    ph = calib_ph_mid + calib_slope_base * (volt - calib_volt_mid);
+  }
+  return constrain(ph, 0.0f, 14.0f);
 }
 
 // ======================= Calibration Endpoints ======================
 void hCalibRoot() { server.send_P(200, "text/html", CALIB_HTML); }
 void hCalibRead() {
   float volt = readVoltageRaw();
-  float ph   = constrain(phSlope * volt + calibration_value, 0.0f, 14.0f);
+  float ph   = readPH();
   String j = "{\"ph\":" + String(ph,4) + ",\"volt\":" + String(volt,4)
-           + ",\"slope\":" + String(phSlope,4) + ",\"offset\":" + String(calibration_value,4) + "}";
+           + ",\"sac\":" + String(calib_slope_acid,4) + ",\"sba\":" + String(calib_slope_base,4)
+           + ",\"pmid\":" + String(calib_ph_mid,4) + "}";
   server.send(200, "application/json", j);
 }
 void hCalib2pt() {
-  if (!server.hasArg("v4") || !server.hasArg("v7")) {
+  if (!server.hasArg("v1") || !server.hasArg("p1") || !server.hasArg("v2") || !server.hasArg("p2")) {
     server.send(400, "application/json", "{\"ok\":false,\"msg\":\"Parameter kurang\"}"); return;
   }
-  float v4 = server.arg("v4").toFloat();
-  float v7 = server.arg("v7").toFloat();
-  if (fabsf(v7 - v4) < 0.01f) {
-    server.send(200, "application/json", "{\"ok\":false,\"msg\":\"Selisih voltase terlalu kecil\"}"); return;
+  float p[2] = {server.arg("p1").toFloat(), server.arg("p2").toFloat()};
+  float v[2] = {server.arg("v1").toFloat(), server.arg("v2").toFloat()};
+  if(p[0] > p[1]) {
+    float tmpp = p[0]; p[0] = p[1]; p[1] = tmpp;
+    float tmpv = v[0]; v[0] = v[1]; v[1] = tmpv;
   }
-  phSlope           = (7.0f - 4.0f) / (v7 - v4);
-  calibration_value = 7.0f - phSlope * v7;
+  if (fabsf(v[1] - v[0]) < 0.01f || fabsf(p[1] - p[0]) < 0.01f) {
+    server.send(200, "application/json", "{\"ok\":false,\"msg\":\"Selisih terlalu kecil\"}"); return;
+  }
+  float slope = (p[1] - p[0]) / (v[1] - v[0]);
+  calib_ph_mid     = p[1];
+  calib_volt_mid   = v[1];
+  calib_slope_acid = slope;
+  calib_slope_base = slope;
   saveCalibration();
-  String j = "{\"ok\":true,\"slope\":" + String(phSlope,4) + ",\"offset\":" + String(calibration_value,4) + "}";
-  server.send(200, "application/json", j);
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+void hCalib3pt() {
+  if (!server.hasArg("v1") || !server.hasArg("p1") || !server.hasArg("v2") || !server.hasArg("p2") || !server.hasArg("v3") || !server.hasArg("p3")) {
+    server.send(400, "application/json", "{\"ok\":false,\"msg\":\"Parameter kurang\"}"); return;
+  }
+  float p[3] = { server.arg("p1").toFloat(), server.arg("p2").toFloat(), server.arg("p3").toFloat() };
+  float v[3] = { server.arg("v1").toFloat(), server.arg("v2").toFloat(), server.arg("v3").toFloat() };
+  
+  for(int i=0; i<2; i++){
+    for(int j=i+1; j<3; j++){
+      if(p[i] > p[j]){
+        float tmpp = p[i]; p[i] = p[j]; p[j] = tmpp;
+        float tmpv = v[i]; v[i] = v[j]; v[j] = tmpv;
+      }
+    }
+  }
+  
+  if (fabsf(v[1]-v[0]) < 0.01f || fabsf(v[2]-v[1]) < 0.01f || fabsf(p[1]-p[0]) < 0.01f || fabsf(p[2]-p[1]) < 0.01f) {
+     server.send(200, "application/json", "{\"ok\":false,\"msg\":\"Titik terlalu dekat\"}"); return;
+  }
+  
+  calib_slope_acid = (p[1] - p[0]) / (v[1] - v[0]);
+  calib_slope_base = (p[2] - p[1]) / (v[2] - v[1]);
+  calib_ph_mid     = p[1];
+  calib_volt_mid   = v[1];
+  saveCalibration();
+  server.send(200, "application/json", "{\"ok\":true}");
 }
 void hCalib1pt() {
   if (!server.hasArg("ref") || !server.hasArg("volt")) {
     server.send(400, "application/json", "{\"ok\":false,\"msg\":\"Parameter kurang\"}"); return;
   }
-  calibration_value = server.arg("ref").toFloat() - phSlope * server.arg("volt").toFloat();
+  calib_ph_mid   = server.arg("ref").toFloat();
+  calib_volt_mid = server.arg("volt").toFloat();
   saveCalibration();
-  server.send(200, "application/json", "{\"ok\":true,\"offset\":" + String(calibration_value,4) + "}");
+  server.send(200, "application/json", "{\"ok\":true}");
 }
 void hCalibExit() { server.send(200, "text/plain", "OK"); delay(1500); ESP.restart(); }
 
@@ -474,6 +587,7 @@ void setupServerRoutes() {
   server.on("/calib", HTTP_GET, hCalibRoot);
   server.on("/read", HTTP_GET, hCalibRead);
   server.on("/calib2pt", HTTP_GET, hCalib2pt);
+  server.on("/calib3pt", HTTP_GET, hCalib3pt);
   server.on("/calib1pt", HTTP_GET, hCalib1pt);
   server.on("/exit", HTTP_GET, hCalibExit);
 }

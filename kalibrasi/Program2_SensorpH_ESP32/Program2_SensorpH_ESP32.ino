@@ -4,9 +4,9 @@
 // Inisialisasi LCD I2C (alamat umum 0x27, bisa 0x3F tergantung modul)
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-float calibration_value = 21.34 + 1.5;
+float calibration_value = 18.41+0.58;
 unsigned long int avgval;
-int buffer_arr[10], temp;
+int buffer_arr[40], temp;
 float ph_act;
 
 // Tentukan pin analog untuk sensor pH
@@ -24,15 +24,15 @@ void setup() {
 }
 
 void loop() {
-  // Baca data analog
-  for (int i = 0; i < 10; i++) {
+  // Baca data analog (Diperbanyak jadi 40 sampel agar sangat stabil)
+  for (int i = 0; i < 40; i++) {
     buffer_arr[i] = analogRead(PH_SENSOR_PIN);
-    delay(30);
+    delay(10);
   }
 
   // Urutkan data (bubble sort)
-  for (int i = 0; i < 9; i++) {
-    for (int j = i + 1; j < 10; j++) {
+  for (int i = 0; i < 39; i++) {
+    for (int j = i + 1; j < 40; j++) {
       if (buffer_arr[i] > buffer_arr[j]) {
         temp = buffer_arr[i];
         buffer_arr[i] = buffer_arr[j];
@@ -41,18 +41,20 @@ void loop() {
     }
   }
 
-  // Ambil rata-rata dari data tengah
+  // Ambil rata-rata dari 20 data tengah (buang 10 ekstrim terendah dan tertinggi)
   avgval = 0;
-  for (int i = 2; i < 8; i++)
+  for (int i = 10; i < 30; i++)
     avgval += buffer_arr[i];
 
-  // Konversi ke voltase ESP32
-  float volt = (float)avgval * 3.3 / 4095.0 / 6;
-  ph_act = -5.70 * volt + calibration_value;
+  // Konversi ke voltase ESP32 (dibagi 20.0)
+  float volt = (float)avgval * 3.3/ 4095.0 / 20.0;
+ph_act = -4.25 * volt + calibration_value;
 
   // Tampilkan di Serial Monitor
   Serial.print("pH Value: ");
-  Serial.println(ph_act);
+  Serial.print(ph_act);
+  Serial.print(" Volt: ");
+  Serial.println(volt);
 
   // Tampilkan di LCD
   lcd.clear();
