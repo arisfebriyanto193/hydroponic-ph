@@ -24,10 +24,17 @@ async function migrate() {
         threshold VARCHAR(255) DEFAULT NULL,
         relay1_status BOOLEAN DEFAULT false,
         relay2_status BOOLEAN DEFAULT false,
+        email_tujuan VARCHAR(255) DEFAULT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
     console.log('Table device_states created.');
+
+    // Tambahkan kolom email_tujuan jika belum ada (untuk DB yang sudah ada)
+    await connection.query(`
+      ALTER TABLE device_states
+      ADD COLUMN IF NOT EXISTS email_tujuan VARCHAR(255) DEFAULT NULL
+    `).catch(() => {}); // abaikan error jika kolom sudah ada
 
     // Create ph_logs table
     await connection.query(`

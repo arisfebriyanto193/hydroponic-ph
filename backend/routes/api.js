@@ -150,4 +150,49 @@ router.get('/download/ph', async (req, res) => {
   }
 });
 
+// GET /api/email-tujuan?user=9911
+router.get('/email-tujuan', async (req, res) => {
+  try {
+    const userId = req.query.user || '9911';
+    const [rows] = await db.query('SELECT email_tujuan FROM device_states WHERE user_id = ?', [userId]);
+    if (rows.length > 0) {
+      res.json({ success: true, data: rows[0] });
+    } else {
+      res.status(404).json({ success: false, message: 'User not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching email_tujuan:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+});
+
+// POST /api/email-tujuan
+// Body: { user: '9911', email_tujuan: 'contoh@email.com' }
+router.post('/email-tujuan', async (req, res) => {
+  try {
+    const userId = req.body.user || '9911';
+    const { email_tujuan } = req.body;
+
+    if (!email_tujuan || !email_tujuan.trim()) {
+      return res.status(400).json({ success: false, message: 'email_tujuan wajib diisi' });
+    }
+
+    // Validasi format email sederhana
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email_tujuan.trim())) {
+      return res.status(400).json({ success: false, message: 'Format email tidak valid' });
+    }
+
+    await db.query(
+      `UPDATE device_states SET email_tujuan = ? WHERE user_id = ?`,
+      [email_tujuan.trim(), userId]
+    );
+
+    res.json({ success: true, message: 'email_tujuan berhasil diperbarui' });
+  } catch (error) {
+    console.error('Error updating email_tujuan:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+});
+
 module.exports = router;

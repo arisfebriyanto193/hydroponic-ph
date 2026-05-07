@@ -1,6 +1,8 @@
 const WebSocket = require('ws');
 const db = require('./db');
 const cron = require('node-cron');
+const { checkAndNotify } = require('./service/email_notif');
+
 
 const WS_URL = 'wss://server-iot-qbyte.qbyte.web.id/ws';
 
@@ -9,14 +11,14 @@ let reconnectInterval = 5000;
 
 // Variabel untuk menyimpan data terbaru yang masuk
 const USER_ID = '9911';
-let latestPhData = null; 
+let latestPhData = null;
 
 // Maksimum jumlah data yang disimpan per user (circular buffer)
 
 
 
 async function getMaxRecords(userId) {
-//ambil max records dari database
+  //ambil max records dari database
   try {
     const [rows] = await db.query(`SELECT max_records FROM settings WHERE user_id = ?`, [userId]);
     return rows.length > 0 ? rows[0].max_records || 250 : 250;
@@ -35,7 +37,7 @@ cron.schedule('*/5 * * * *', async () => {
     } else {
       phValue = parseFloat(latestPhData);
     }
-    
+
     if (!isNaN(phValue)) {
       try {
         const MAX_RECORDS = await getMaxRecords(USER_ID);
@@ -61,6 +63,10 @@ cron.schedule('*/5 * * * *', async () => {
           [USER_ID, phValue]
         );
         console.log(`[DB Cron] Saved pH data at ${new Date().toLocaleTimeString('id-ID')}: ${phValue} (record ${Math.min(total + 1, MAX_RECORDS)}/${MAX_RECORDS})`);
+
+        // ── Cek threshold & kirim email notifikasi jika mode=manual ──
+        await checkAndNotify(USER_ID, phValue);
+
       } catch (error) {
         console.error('[DB Cron] Error saving pH data:', error);
       }
@@ -76,7 +82,7 @@ function connectWS() {
 
   socket.on('open', () => {
     console.log('[WebSocket] Connected');
-    
+
     // Subscribe to topics
     const topicsToSubscribe = [
       `data/ph/user/${USER_ID}`,
@@ -100,7 +106,7 @@ function connectWS() {
       const messages = data.toString().split('\n');
       for (const messageStr of messages) {
         if (!messageStr.trim()) continue;
-        
+
         try {
           const msg = JSON.parse(messageStr);
           if (msg.action === 'publish' || msg.topic) {
@@ -129,12 +135,12 @@ function connectWS() {
 async function handleMessage(topic, payload) {
   try {
     const topicParts = topic.split('/');
-    
+
     // Check if topic is related to user 9911
     if (topic === `data/ph/user/${USER_ID}`) {
       // payload ex: { "sensor1": ..., "sensor2": ... } OR simple Number
       latestPhData = payload; // simpan data terbaru ke variabel json memory
-    } 
+    }
     else if (topic === `data/mode/user/${USER_ID}`) {
       // payload ex: "otomatis" / "manual"
       const modeStr = (typeof payload === 'string') ? payload : String(payload?.mode || 'manual');
@@ -162,8 +168,8 @@ async function handleMessage(topic, payload) {
       await db.query(`UPDATE device_states SET relay2_status = ? WHERE user_id = ?`, [state, USER_ID]);
       console.log(`[DB] Updated relay2 status to ${state}`);
     }
-    
-    
+
+
   } catch (error) {
     console.error('[WebSocket DB Error]', error);
   }
