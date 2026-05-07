@@ -20,6 +20,7 @@ export function useHydroponics() {
   const [ph, setPh] = useState<number | null>(null);
   const [mode, setMode] = useState<'otomatis' | 'manual'>('manual');
   const [threshold, setThreshold] = useState<string>('6.5');
+  const [emailTujuan, setEmailTujuan] = useState<string>('');
   const [relay1, setRelay1] = useState(false);
   const [relay2, setRelay2] = useState(false);
   
@@ -51,6 +52,17 @@ export function useHydroponics() {
     } catch (e) {
       console.error('fetchInitialState (threshold):', e);
     }
+    
+    try {
+      const emailRes = await axios.get(`${API_URL}/api/email-tujuan?user=${USER_ID}`);
+      if (emailRes.data?.success && emailRes.data.data) {
+        const email = emailRes.data.data.email_tujuan;
+        if (email !== undefined && email !== null) setEmailTujuan(String(email));
+      }
+    } catch (e) {
+      console.error('fetchInitialState (emailTujuan):', e);
+    }
+
     ignoreWsStateUntil.current = Date.now() + 8000;
   };
 
@@ -181,18 +193,38 @@ export function useHydroponics() {
     publish(`data/treshold/user/${USER_ID}`, threshold);
   };
 
+  const updateEmailTujuan = async () => {
+    try {
+      const res = await axios.post(`${API_URL}/api/email-tujuan`, {
+        user: USER_ID,
+        email_tujuan: emailTujuan
+      });
+      if (res.data?.success) {
+        alert('Email notifikasi berhasil disimpan.');
+      } else {
+        alert(res.data?.message || 'Gagal menyimpan email.');
+      }
+    } catch (e: any) {
+      alert(e.response?.data?.message || 'Gagal menyimpan email (Server Error).');
+      console.error('updateEmailTujuan:', e);
+    }
+  };
+
   return {
     isOnline,
     ph,
     mode,
     threshold,
     setThreshold,
+    emailTujuan,
+    setEmailTujuan,
     relay1,
     relay2,
     realtimeHistory,
     toggleMode,
     toggleRelay,
     updateThreshold,
+    updateEmailTujuan,
     USER_ID,
     API_URL
   };

@@ -184,7 +184,7 @@ export default function App() {
                   </div>
 
                   {h.mode === 'otomatis' && (
-                    <div className="threshold-section">
+                    <div className="threshold-section" style={{ marginTop: 16 }}>
                       <div className="threshold-label">Target pH Threshold</div>
                       <div className="threshold-row">
                         <input 
@@ -196,6 +196,45 @@ export default function App() {
                           placeholder="mis. 6.5" 
                         />
                         <button className="btn-primary" onClick={h.updateThreshold}>Update</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {h.mode === 'manual' && (
+                    <div className="threshold-section" style={{ marginTop: 16 }}>
+                      <div className="threshold-label">Notifikasi Email Peringatan</div>
+                      <div className="setting-desc" style={{marginBottom: 12, fontSize: 12}}>Kirim peringatan jika pH di luar batas (hanya aktif di mode Manual).</div>
+                      
+                      <div className="threshold-row" style={{marginBottom: 12}}>
+                        <div style={{flex: 1}}>
+                          <div className="threshold-label" style={{fontSize: 11}}>Ambang Batas Peringatan (mis: 6.5 atau 6-7)</div>
+                          <input 
+                            type="text" 
+                            className="input-field" 
+                            value={h.threshold} 
+                            onChange={(e) => h.setThreshold(e.target.value)}
+                            placeholder="mis. 6.5" 
+                          />
+                        </div>
+                        <div style={{display: 'flex', alignItems: 'flex-end'}}>
+                          <button className="btn-primary" onClick={h.updateThreshold} style={{height: 38}}>Update Batas</button>
+                        </div>
+                      </div>
+
+                      <div className="threshold-row">
+                        <div style={{flex: 1}}>
+                          <div className="threshold-label" style={{fontSize: 11}}>Email Penerima</div>
+                          <input 
+                            type="email" 
+                            className="input-field" 
+                            value={h.emailTujuan} 
+                            onChange={(e) => h.setEmailTujuan(e.target.value)}
+                            placeholder="email@contoh.com" 
+                          />
+                        </div>
+                        <div style={{display: 'flex', alignItems: 'flex-end'}}>
+                          <button className="btn-primary" onClick={h.updateEmailTujuan} style={{height: 38}}>Simpan Email</button>
+                        </div>
                       </div>
                     </div>
                   )}
