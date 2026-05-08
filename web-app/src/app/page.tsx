@@ -6,10 +6,91 @@ import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Filler,
 } from 'chart.js';
-import { LayoutGrid, List, Activity, TrendingUp, Droplets, Wind, Calendar, Database, DownloadCloud } from 'lucide-react';
+import { LayoutGrid, List, Activity, TrendingUp, Droplets, Wind, Calendar, Database, DownloadCloud, ChevronLeft, ChevronRight } from 'lucide-react';
 import axios from 'axios';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Filler);
+
+function CalendarPopup({ selectedDate, availableDates, onSelect, onClose }: { selectedDate: string, availableDates: string[], onSelect: (date: string) => void, onClose: () => void }) {
+  const [currentMonth, setCurrentMonth] = useState(new Date(selectedDate));
+  
+  const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
+  const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
+
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth();
+  
+  const daysInMonth = getDaysInMonth(year, month);
+  const firstDay = getFirstDayOfMonth(year, month);
+  
+  const days = [];
+  for (let i = 0; i < firstDay; i++) days.push(null);
+  for (let i = 1; i <= daysInMonth; i++) days.push(i);
+
+  const prevMonth = (e: any) => { e.stopPropagation(); setCurrentMonth(new Date(year, month - 1, 1)); };
+  const nextMonth = (e: any) => { e.stopPropagation(); setCurrentMonth(new Date(year, month + 1, 1)); };
+
+  const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+
+  return (
+    <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 100, backgroundColor: 'white', border: '1px solid var(--line)', borderRadius: '12px', padding: '16px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', width: '300px', color: '#333' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <button onClick={prevMonth} style={{ background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '6px', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronLeft size={16}/></button>
+        <div style={{ fontWeight: 'bold', fontSize: '15px' }}>{monthNames[month]} {year}</div>
+        <button onClick={nextMonth} style={{ background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '6px', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={16}/></button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', marginBottom: '8px', fontSize: '12px', color: 'var(--hint)', fontWeight: 600 }}>
+        <div>Min</div><div>Sen</div><div>Sel</div><div>Rab</div><div>Kam</div><div>Jum</div><div>Sab</div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+        {days.map((day, idx) => {
+          if (!day) return <div key={idx} />;
+          
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const isSelected = dateStr === selectedDate;
+          const hasData = availableDates.includes(dateStr);
+          
+          let bgColor = 'transparent';
+          let color = '#333';
+          let border = '1px solid transparent';
+          
+          if (isSelected) {
+            bgColor = 'var(--p500)';
+            color = 'white';
+          } else if (hasData) {
+            bgColor = 'rgba(62, 122, 74, 0.15)'; // Hijau terang
+            color = 'var(--p700)';
+            border = '1px solid var(--p500)';
+          } else {
+            color = '#888';
+          }
+
+          return (
+            <button 
+              key={idx}
+              onClick={(e) => { e.stopPropagation(); onSelect(dateStr); onClose(); }}
+              style={{
+                background: bgColor,
+                color: color,
+                border: border,
+                borderRadius: '6px',
+                padding: '8px 0',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: isSelected ? 'bold' : 'normal',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseOver={(e) => { if (!isSelected) e.currentTarget.style.background = hasData ? 'rgba(62, 122, 74, 0.25)' : '#f0f0f0'; }}
+              onMouseOut={(e) => { if (!isSelected) e.currentTarget.style.background = bgColor; }}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'history'>('dashboard');
@@ -21,6 +102,8 @@ export default function App() {
   );
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [showCalendar, setShowCalendar] = useState(false);
 
   const phStatus = (v: number | null) => {
     if (v === null) return { label: '–', color: 'var(--hint)' };
@@ -34,18 +117,25 @@ export default function App() {
   const fetchHistoryByDate = async (date: string) => {
     setHistoryLoading(true);
     try {
-      console.log(`${h.API_URL}/api/ph?days=${date}&user=${h.USER_ID}`);
-      const res = await axios.get(`${h.API_URL}/api/ph?days=${date}&user=${h.USER_ID}`);
+      const res = await axios.get(`${h.API_URL}/api/ph?date=${date}&user=${h.USER_ID}`);
       if (res.data?.success) setHistoryData(res.data.data.reverse());
       else setHistoryData([]);
-
-      console.log(res.data);
     } catch (e) {
       //alert('Gagal mengambil data riwayat.');
     } finally {
       setHistoryLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      axios.get(`${h.API_URL}/api/ph/dates?user=${h.USER_ID}`)
+        .then(res => {
+          if (res.data?.success) setAvailableDates(res.data.data);
+        })
+        .catch(console.error);
+    }
+  }, [activeTab, h.API_URL, h.USER_ID]);
 
   useEffect(() => {
     if (activeTab === 'history') fetchHistoryByDate(selectedDate);
@@ -281,23 +371,27 @@ export default function App() {
           </>
         ) : (
           <>
-            <div className="history-controls">
-              <div className="filter-row">
-                <button className={`filter-chip ${selectedDate === new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) ? 'active' : ''}`} onClick={goToday}>
-                  Hari Ini
+            <div className="history-controls" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+              <div style={{ position: 'relative' }}>
+                <button 
+                  className="date-pill" 
+                  onClick={() => setShowCalendar(!showCalendar)}
+                  style={{ border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', backgroundColor: 'var(--bg)', borderRadius: '20px', fontSize: '14px', fontWeight: 600 }}
+                >
+                  <Calendar size={16} strokeWidth={2.5} />
+                  {new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
                 </button>
-                <button className="filter-chip" onClick={goYesterday}>
-                  Kemarin
-                </button>
-                <button className="filter-icon-btn">
-                  <Calendar size={18} />
-                  <input type="date" className="native-date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
-                </button>
-              </div>
-
-              <div className="date-pill">
-                <Calendar size={15} strokeWidth={3} />
-                Data Tanggal: {selectedDate}
+                {showCalendar && (
+                  <>
+                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }} onClick={() => setShowCalendar(false)}></div>
+                    <CalendarPopup 
+                      selectedDate={selectedDate} 
+                      availableDates={availableDates} 
+                      onSelect={(date) => { setSelectedDate(date); setShowCalendar(false); }} 
+                      onClose={() => setShowCalendar(false)} 
+                    />
+                  </>
+                )}
               </div>
             </div>
 

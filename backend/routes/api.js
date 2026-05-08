@@ -58,25 +58,62 @@ router.get('/relay', async (req, res) => {
 
 router.get('/ph', async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 1;
     const userId = req.query.user || '9911';
-
-    // Using INTERVAL in MySQL to filter logic
-    const [rows] = await db.query(
-      `SELECT * FROM ph_logs 
-       WHERE user_id = ? 
-       AND created_at >= NOW() - INTERVAL ? DAY 
-       ORDER BY created_at DESC`,
-      [userId, days]
-    );
+    let rows = [];
+    
+    if (req.query.date) {
+      // Fetch by specific date
+      const date = req.query.date;
+      [rows] = await db.query(
+        `SELECT * FROM ph_logs 
+         WHERE user_id = ? 
+         AND DATE(created_at) = ? 
+         ORDER BY created_at DESC`,
+        [userId, date]
+      );
+    } else {
+      // Fetch by days
+      const days = parseInt(req.query.days) || 1;
+      [rows] = await db.query(
+        `SELECT * FROM ph_logs 
+         WHERE user_id = ? 
+         AND created_at >= NOW() - INTERVAL ? DAY 
+         ORDER BY created_at DESC`,
+        [userId, days]
+      );
+    }
 
     res.json({
       success: true,
       data: rows,
-      days_requested: days
+      days_requested: req.query.days,
+      date_requested: req.query.date
     });
   } catch (error) {
     console.error('Error fetching pH data:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+});
+
+router.get('/ph/dates', async (req, res) => {
+  try {
+    const userId = req.query.user || '9911';
+    const [rows] = await db.query(
+      `SELECT DISTINCT DATE(created_at) as date FROM ph_logs 
+       WHERE user_id = ? 
+       ORDER BY date DESC`,
+      [userId]
+    );
+    
+    // Format to YYYY-MM-DD strings
+    const dates = rows.map(row => {
+      const d = new Date(row.date);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    });
+
+    res.json({ success: true, data: dates });
+  } catch (error) {
+    console.error('Error fetching distinct dates:', error);
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 });
