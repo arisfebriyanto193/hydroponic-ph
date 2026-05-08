@@ -6,7 +6,7 @@ import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Filler,
 } from 'chart.js';
-import { LayoutGrid, List, Activity, TrendingUp, Droplets, Wind, Calendar, Database, DownloadCloud, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutGrid, List, Activity, TrendingUp, Droplets, Wind, Calendar, Database, DownloadCloud, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import axios from 'axios';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Filler);
@@ -371,15 +371,32 @@ export default function App() {
           </>
         ) : (
           <>
-            <div className="history-controls" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+            <div className="history-controls" style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '20px' }}>
               <div style={{ position: 'relative' }}>
                 <button 
                   className="date-pill" 
                   onClick={() => setShowCalendar(!showCalendar)}
-                  style={{ border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', backgroundColor: 'var(--bg)', borderRadius: '20px', fontSize: '14px', fontWeight: 600 }}
+                  style={{ 
+                    border: '1px solid var(--line)', 
+                    cursor: 'pointer', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '10px', 
+                    padding: '10px 20px', 
+                    backgroundColor: '#ffffff', 
+                    borderRadius: '8px', 
+                    fontSize: '15px', 
+                    fontWeight: 600,
+                    color: 'var(--p700)',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                    transition: 'all 0.2s ease'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.borderColor = 'var(--p500)'}
+                  onMouseOut={(e) => e.currentTarget.style.borderColor = 'var(--line)'}
                 >
-                  <Calendar size={16} strokeWidth={2.5} />
-                  {new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  <Calendar size={18} strokeWidth={2.5} color="var(--p500)" />
+                  Pilih Tanggal: {new Date(selectedDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  <ChevronDown size={16} style={{ marginLeft: '4px', opacity: 0.6 }} />
                 </button>
                 {showCalendar && (
                   <>

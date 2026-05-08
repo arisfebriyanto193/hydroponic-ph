@@ -172,9 +172,9 @@ router.get('/download/ph', async (req, res) => {
       [userId, days]
     );
 
-    let csvContent = "Waktu,pH\n";
+    let csvContent = "Tanggal,Jam,pH\n";
     rows.forEach(row => {
-      csvContent += `${new Date(row.created_at).toLocaleString('id-ID')},${row.value}\n`;
+      csvContent += `${new Date(row.created_at).toLocaleDateString('id-ID')},${new Date(row.created_at).toLocaleTimeString('id-ID')},${row.value}\n`;
     });
 
     res.header('Content-Type', 'text/csv');
