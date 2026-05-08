@@ -131,7 +131,6 @@ router.get('/download/ph', async (req, res) => {
     const [rows] = await db.query(
       `SELECT created_at, value FROM ph_logs 
        WHERE user_id = ? 
-       AND created_at >= NOW() - INTERVAL ? DAY 
        ORDER BY created_at DESC`,
       [userId, days]
     );
