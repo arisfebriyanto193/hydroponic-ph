@@ -12,6 +12,7 @@ let reconnectInterval = 5000;
 // Variabel untuk menyimpan data terbaru yang masuk
 const USER_ID = '9911';
 let latestPhData = null;
+let latestTdsData = null;
 
 // Maksimum jumlah data yang disimpan per user (circular buffer)
 
@@ -30,49 +31,76 @@ async function getMaxRecords(userId) {
 
 // Cron job berjalan setiap kelipatan 5 menit (contoh: 00:00, 00:05, 00:10, dst)
 cron.schedule('*/5 * * * *', async () => {
-  if (latestPhData !== null) {
+  if (latestPhData !== null || latestTdsData !== null) {
     let phValue = 0;
-    if (typeof latestPhData === 'object' && latestPhData !== null) {
-      phValue = latestPhData.sensor1 || latestPhData.pH || 0;
-    } else {
-      phValue = parseFloat(latestPhData);
-    }
-
-    if (!isNaN(phValue)) {
-      try {
-        const MAX_RECORDS = await getMaxRecords(USER_ID);
-        console.log(`[DB Cron] MAX_RECORDS: ${MAX_RECORDS}`);
-        // Hitung jumlah data yang sudah ada untuk user ini
-        const [[{ total }]] = await db.query(
-          `SELECT COUNT(*) AS total FROM ph_logs WHERE user_id = ?`,
-          [USER_ID]
-        );
-
-        // Jika sudah mencapai batas maksimum, hapus data terlama (circular buffer)
-        if (total >= MAX_RECORDS) {
-          await db.query(
-            `DELETE FROM ph_logs WHERE user_id = ? ORDER BY id ASC LIMIT 1`,
-            [USER_ID]
-          );
-          console.log(`[DB Cron] Circular buffer: hapus data terlama (total sebelumnya: ${total})`);
-        }
-
-        // Simpan data baru
-        await db.query(
-          `INSERT INTO ph_logs (user_id, sensor_type, value) VALUES (?, 'ph', ?)`,
-          [USER_ID, phValue]
-        );
-        console.log(`[DB Cron] Saved pH data at ${new Date().toLocaleTimeString('id-ID')}: ${phValue} (record ${Math.min(total + 1, MAX_RECORDS)}/${MAX_RECORDS})`);
-
-        // ── Cek threshold & kirim email notifikasi jika mode=manual ──
-        await checkAndNotify(USER_ID, phValue);
-
-      } catch (error) {
-        console.error('[DB Cron] Error saving pH data:', error);
+    if (latestPhData !== null) {
+      if (typeof latestPhData === 'object' && latestPhData !== null) {
+        phValue = latestPhData.sensor1 || latestPhData.pH || 0;
+      } else {
+        phValue = parseFloat(latestPhData);
       }
     }
-    // Reset agar tidak duplicate saat tidak ada data baru
+
+    let tdsValue = 0;
+    if (latestTdsData !== null) {
+      if (typeof latestTdsData === 'object' && latestTdsData !== null) {
+        tdsValue = latestTdsData.sensor1 || latestTdsData.tds || 0;
+      } else {
+        tdsValue = parseFloat(latestTdsData);
+      }
+    }
+
+    try {
+      const MAX_RECORDS = await getMaxRecords(USER_ID);
+      // Kita menghitung total records berdasarkan waktu atau id, tapi karena kita punya dua baris (ph, tds) per entry,
+      // lebih baik cek berdasarkan COUNT(DISTINCT created_at) atau asumsikan 1 set data = 2 rows
+      const [[{ total }]] = await db.query(
+        `SELECT COUNT(*) AS total FROM ph_logs WHERE user_id = ? AND sensor_type = 'ph'`,
+        [USER_ID]
+      );
+
+      // Jika sudah mencapai batas, hapus data terlama
+      if (total >= MAX_RECORDS) {
+        // Hapus berdasar created_at terlama agar sinkron
+        const [[oldest]] = await db.query(
+          `SELECT created_at FROM ph_logs WHERE user_id = ? ORDER BY created_at ASC LIMIT 1`,
+          [USER_ID]
+        );
+        if (oldest) {
+          await db.query(
+            `DELETE FROM ph_logs WHERE user_id = ? AND created_at = ?`,
+            [USER_ID, oldest.created_at]
+          );
+        }
+      }
+
+      const now = new Date(); // Pastikan timestamp sama untuk pH dan TDS
+
+      if (!isNaN(phValue) && latestPhData !== null) {
+        await db.query(
+          `INSERT INTO ph_logs (user_id, sensor_type, value, created_at) VALUES (?, 'ph', ?, ?)`,
+          [USER_ID, phValue, now]
+        );
+        // ── Cek threshold & kirim email notifikasi jika mode=manual ──
+        await checkAndNotify(USER_ID, phValue);
+      }
+
+      if (!isNaN(tdsValue) && latestTdsData !== null) {
+        await db.query(
+          `INSERT INTO ph_logs (user_id, sensor_type, value, created_at) VALUES (?, 'tds', ?, ?)`,
+          [USER_ID, tdsValue, now]
+        );
+      }
+
+      console.log(`[DB Cron] Saved data at ${now.toLocaleTimeString('id-ID')}: pH=${phValue}, TDS=${tdsValue}`);
+
+    } catch (error) {
+      console.error('[DB Cron] Error saving data:', error);
+    }
+
+    // Reset
     latestPhData = null;
+    latestTdsData = null;
   }
 });
 
@@ -86,6 +114,7 @@ function connectWS() {
     // Subscribe to topics
     const topicsToSubscribe = [
       `data/ph/user/${USER_ID}`,
+      `data/tds/user/${USER_ID}`,
       `data/mode/user/${USER_ID}`,
       `data/treshold/user/${USER_ID}`,
       `data/relay1/user/${USER_ID}`,
@@ -138,8 +167,10 @@ async function handleMessage(topic, payload) {
 
     // Check if topic is related to user 9911
     if (topic === `data/ph/user/${USER_ID}`) {
-      // payload ex: { "sensor1": ..., "sensor2": ... } OR simple Number
-      latestPhData = payload; // simpan data terbaru ke variabel json memory
+      latestPhData = payload;
+    }
+    else if (topic === `data/tds/user/${USER_ID}`) {
+      latestTdsData = payload;
     }
     else if (topic === `data/mode/user/${USER_ID}`) {
       // payload ex: "otomatis" / "manual"

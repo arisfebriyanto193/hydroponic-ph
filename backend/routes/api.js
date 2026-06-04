@@ -65,9 +65,13 @@ router.get('/ph', async (req, res) => {
       // Fetch by specific date
       const date = req.query.date;
       [rows] = await db.query(
-        `SELECT * FROM ph_logs 
+        `SELECT created_at, 
+                MAX(CASE WHEN sensor_type = 'ph' THEN value END) as ph_value,
+                MAX(CASE WHEN sensor_type = 'tds' THEN value END) as tds_value
+         FROM ph_logs 
          WHERE user_id = ? 
          AND DATE(created_at) = ? 
+         GROUP BY created_at
          ORDER BY created_at DESC`,
         [userId, date]
       );
@@ -75,9 +79,13 @@ router.get('/ph', async (req, res) => {
       // Fetch by days
       const days = parseInt(req.query.days) || 1;
       [rows] = await db.query(
-        `SELECT * FROM ph_logs 
+        `SELECT created_at, 
+                MAX(CASE WHEN sensor_type = 'ph' THEN value END) as ph_value,
+                MAX(CASE WHEN sensor_type = 'tds' THEN value END) as tds_value
+         FROM ph_logs 
          WHERE user_id = ? 
          AND created_at >= NOW() - INTERVAL ? DAY 
+         GROUP BY created_at
          ORDER BY created_at DESC`,
         [userId, days]
       );
@@ -166,15 +174,22 @@ router.get('/download/ph', async (req, res) => {
     const userId = req.query.user || '9911';
 
     const [rows] = await db.query(
-      `SELECT created_at, value FROM ph_logs 
+      `SELECT created_at, 
+              MAX(CASE WHEN sensor_type = 'ph' THEN value END) as ph_value,
+              MAX(CASE WHEN sensor_type = 'tds' THEN value END) as tds_value
+       FROM ph_logs 
        WHERE user_id = ? 
+       AND created_at >= NOW() - INTERVAL ? DAY
+       GROUP BY created_at
        ORDER BY created_at DESC`,
       [userId, days]
     );
 
-    let csvContent = "Tanggal,Jam,pH\n";
+    let csvContent = "Tanggal,Jam,pH,TDS (ppm)\n";
     rows.forEach(row => {
-      csvContent += `${new Date(row.created_at).toLocaleDateString('id-ID')},${new Date(row.created_at).toLocaleTimeString('id-ID')},${row.value}\n`;
+      const ph = row.ph_value !== null ? row.ph_value : '';
+      const tds = row.tds_value !== null ? row.tds_value : '';
+      csvContent += `${new Date(row.created_at).toLocaleDateString('id-ID')},${new Date(row.created_at).toLocaleTimeString('id-ID')},${ph},${tds}\n`;
     });
 
     res.header('Content-Type', 'text/csv');

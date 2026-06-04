@@ -12,12 +12,16 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define RELAY1_PIN     5
 #define RELAY2_PIN     4
 #define PH_SENSOR_PIN  34
+#define TDS_SENSOR_PIN 33
 #define CALIB_BTN_PIN  0
 
 #define PH_SEND_INTERVAL     1500
 #define RELAY_MIN_ON_TIME    3000
 #define CALIB_BTN_HOLD_MS    3000
 #define LCD_PAGE_INTERVAL    3000
+#define TDS_VREF             3.3f
+#define TDS_ADC_RES          4095.0f
+#define TDS_TEMPERATURE      25.0f   // asumsi suhu air 25°C
 
 char cfgWsHost[80]   = "server-iot-qbyte.qbyte.web.id";
 char cfgWsPath[40]   = "/ws";
@@ -62,6 +66,40 @@ void setRelay1(bool state, bool publish = true);
 void setRelay2(bool state, bool publish = true);
 float readVoltageRaw();
 float readPH();
+float readTDS();
+
+// ========================= TDS Sensor ===============================
+float emaTDS = -1.0f;   // EMA state untuk TDS
+
+float readTDS() {
+  // Baca 20 sampel, buang 5 terendah & 5 tertinggi, rata-rata 10 tengah
+  int buf[20], tmp;
+  for (int i = 0; i < 20; i++) { buf[i] = analogRead(TDS_SENSOR_PIN); delay(5); }
+  for (int i = 0; i < 19; i++)
+    for (int j = i + 1; j < 20; j++)
+      if (buf[i] > buf[j]) { tmp = buf[i]; buf[i] = buf[j]; buf[j] = tmp; }
+  unsigned long acc = 0;
+  for (int i = 5; i < 15; i++) acc += buf[i];
+  float avgVolt = (float)acc * TDS_VREF / TDS_ADC_RES / 10.0f;
+
+  // Kompensasi suhu standar (faktor 1 + 0.02*(T-25))
+  float compCoeff  = 1.0f + 0.02f * (TDS_TEMPERATURE - 25.0f);
+  float compVolt   = avgVolt / compCoeff;
+
+  // Formula konversi TDS (dari datasheet sensor analog DFRobot / generic)
+  float rawTDS = (133.42f * compVolt * compVolt * compVolt
+               - 255.86f * compVolt * compVolt
+               + 857.39f * compVolt) * 0.5f;
+
+  // EMA smoothing (alpha=0.20 → cukup responsif namun meredam noise)
+  if (emaTDS < 0.0f) {
+    emaTDS = rawTDS;
+  } else {
+    emaTDS = (0.20f * rawTDS) + (0.80f * emaTDS);
+  }
+
+  return constrain(emaTDS, 0.0f, 3000.0f);
+}
 
 const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html><html lang="id"><head>
@@ -86,6 +124,7 @@ input:focus{outline:none;border-color:#00d2ff}
 <h1>💧 Hydroponic Dashboard</h1>
 <div class="card"><div class="lbl">pH Saat Ini</div><div class="v" id="phv">—</div>
 <div class="lbl">Threshold: <span id="thv">—</span> ± <span id="dbv">—</span> | Mode: <span id="mdv">—</span></div></div>
+<div class="card"><div class="lbl">TDS (Total Dissolved Solids)</div><div class="v" id="tdsv" style="color:#38ef7d">—</div><div class="lbl">ppm</div></div>
 <div class="card">
 <div class="lbl">Atur Threshold & Toleransi (±)</div>
 <div class="row" style="margin-top:10px; align-items:center;">
@@ -112,6 +151,7 @@ document.getElementById('dbv').innerText=d.deadband.toFixed(2);
 if(document.activeElement !== document.getElementById('inTh')) document.getElementById('inTh').value=d.threshold.toFixed(2);
 if(document.activeElement !== document.getElementById('inDb')) document.getElementById('inDb').value=d.deadband.toFixed(2);
 document.getElementById('mdv').innerText=d.mode;
+document.getElementById('tdsv').innerText=d.tds.toFixed(0);
 const rb1=document.getElementById('r1');const rb2=document.getElementById('r2');
 rb1.className='btn '+(d.r1?'on':'off');rb1.innerText='Asam '+(d.r1?'ON':'OFF');
 rb2.className='btn '+(d.r2?'on':'off');rb2.innerText='Basa '+(d.r2?'ON':'OFF');
@@ -510,11 +550,13 @@ void setupServerRoutes() {
   });
   
   server.on("/api/status", HTTP_GET, []() {
-    float ph = readPH();
-    String j = "{\"ph\":" + String(ph,2) + ",\"threshold\":" + String(threshold,2) + 
+    float ph  = readPH();
+    float tds = readTDS();
+    String j = "{\"ph\":" + String(ph,2) + ",\"threshold\":" + String(threshold,2) +
                ",\"deadband\":" + String(phDeadband,2) +
-               ",\"mode\":\"" + currentMode + "\",\"r1\":" + (relay1State?"true":"false") + 
-               ",\"r2\":" + (relay2State?"true":"false") + "}";
+               ",\"mode\":\"" + currentMode + "\",\"r1\":" + (relay1State?"true":"false") +
+               ",\"r2\":" + (relay2State?"true":"false") +
+               ",\"tds\":" + String(tds,1) + "}";
     server.send(200, "application/json", j);
   });
   
@@ -808,9 +850,10 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   }
 }
 
-void updateLCD(float ph) {
+void updateLCD(float ph, float tds) {
   lcd.clear();
   if (lcdPage == 0) {
+    // Halaman 0: pH dan threshold
     lcd.setCursor(0, 0);
     lcd.print("pH:"); lcd.print(ph, 2);
     lcd.print(" T:"); lcd.print(threshold, 1);
@@ -819,15 +862,27 @@ void updateLCD(float ph) {
     lcd.print(" R1:"); lcd.print(relay1State ? "1" : "0");
     lcd.print(" R2:"); lcd.print(relay2State ? "1" : "0");
   } else if (lcdPage == 1) {
+    // Halaman 1: TDS
+    lcd.setCursor(0, 0);
+    lcd.print("TDS: "); lcd.print((int)tds); lcd.print(" ppm");
+    lcd.setCursor(0, 1);
+    lcd.print("Nut: ");
+    if      (tds < 400)  lcd.print("Sangat Rendah");
+    else if (tds < 800)  lcd.print("Rendah      ");
+    else if (tds < 1400) lcd.print("Normal      ");
+    else if (tds < 2000) lcd.print("Tinggi      ");
+    else                 lcd.print("Sangat Tinggi");
+  } else if (lcdPage == 2) {
+    // Halaman 2: WiFi
     lcd.setCursor(0, 0);
     lcd.print("WiFi: ");
     if (isAPMode) lcd.print("AP Mode");
-    else if (WiFi.status() == WL_CONNECTED) lcd.print("Connected");
+    else if (WiFi.status() == WL_CONNECTED) lcd.print("OK");
     else lcd.print("Disconnected");
     lcd.setCursor(0, 1);
-    lcd.print("IP:");
     lcd.print(isAPMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString());
-  } else if (lcdPage == 2) {
+  } else if (lcdPage == 3) {
+    // Halaman 3: WebSocket / API
     lcd.setCursor(0, 0);
     lcd.print("WS: "); lcd.print(wsConnected ? "Connected" : "Wait...");
     lcd.setCursor(0, 1);
@@ -941,36 +996,50 @@ void loop() {
     }
   }
 
-  // LCD Paging Logic
+  // LCD Paging Logic (4 halaman: pH, TDS, WiFi, WS)
   if (now - lastLcdChange >= LCD_PAGE_INTERVAL) {
     lastLcdChange = now;
-    lcdPage = (lcdPage + 1) % 3;
-    updateLCD(readPH()); // Update immediately on page change
+    lcdPage = (lcdPage + 1) % 4;
+    updateLCD(readPH(), readTDS()); // Update immediately on page change
   }
 
-  // Main task: Read pH, Print to LCD/Serial, Publish to WS, Auto Control
+  // Main task: Read pH & TDS, Print to LCD/Serial, Publish to WS, Auto Control
   if (now - lastPhSend >= PH_SEND_INTERVAL) {
     lastPhSend = now;
-    float ph = readPH();
-    
+    float ph  = readPH();
+    float tds = readTDS();
+
     // Update LCD
-    updateLCD(ph);
+    updateLCD(ph, tds);
 
     // Auto Control
     if (currentMode == "otomatis") autoModeControl(ph);
 
-    // Serial & WS Publish
-    Serial.printf("[pH] %.2f | Mode: %s | Threshold: %.2f | R1:%s R2:%s\n",
-                  ph, currentMode.c_str(), threshold,
+    // Serial log
+    Serial.printf("[pH] %.2f | [TDS] %.0f ppm | Mode: %s | Threshold: %.2f | R1:%s R2:%s\n",
+                  ph, tds, currentMode.c_str(), threshold,
                   relay1State ? "ON" : "OFF", relay2State ? "ON" : "OFF");
 
     if (wsConnected && !isAPMode) {
-      StaticJsonDocument<200> doc;
-      doc["action"]             = "publish";
-      doc["topic"]              = String("data/ph/user/") + cfgUserId;
-      doc["payload"]["sensor1"] = round(ph * 100.0f) / 100.0f;
-      String msg; serializeJson(doc, msg);
-      webSocket.sendTXT(msg);
+      // Publish pH
+      {
+        StaticJsonDocument<200> doc;
+        doc["action"]             = "publish";
+        doc["topic"]              = String("data/ph/user/") + cfgUserId;
+        doc["payload"]["sensor1"] = round(ph * 100.0f) / 100.0f;
+        String msg; serializeJson(doc, msg);
+        webSocket.sendTXT(msg);
+      }
+      // Publish TDS
+      {
+        StaticJsonDocument<200> doc;
+        doc["action"]             = "publish";
+        doc["topic"]              = String("data/tds/user/") + cfgUserId;
+        doc["payload"]["sensor1"] = round(tds);
+        String msg; serializeJson(doc, msg);
+        webSocket.sendTXT(msg);
+        Serial.printf("[WS] TDS published: %.0f ppm\n", tds);
+      }
     }
   }
 }
