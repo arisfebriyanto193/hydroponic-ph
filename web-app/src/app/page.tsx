@@ -6,7 +6,7 @@ import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Filler,
 } from 'chart.js';
-import { LayoutGrid, List, Activity, TrendingUp, Droplets, Wind, Calendar, Database, DownloadCloud, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { LayoutGrid, List, Activity, TrendingUp, Droplets, Wind, Calendar, Database, DownloadCloud, ChevronLeft, ChevronRight, ChevronDown, Gauge } from 'lucide-react';
 import axios from 'axios';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Filler);
@@ -112,6 +112,15 @@ export default function App() {
     return { label: 'Optimal', color: 'var(--success)' };
   };
 
+  const tdsStatus = (v: number | null) => {
+    if (v === null) return { label: '–', color: 'var(--hint)', desc: 'Menunggu data sensor...' };
+    if (v < 400)   return { label: 'Sangat Rendah', color: 'var(--danger)',  desc: 'Nutrisi sangat kurang' };
+    if (v < 800)   return { label: 'Rendah',        color: 'var(--warn)',    desc: 'Tambahkan larutan nutrisi' };
+    if (v < 1400)  return { label: 'Normal',         color: 'var(--success)', desc: 'Konsentrasi nutrisi optimal' };
+    if (v < 2000)  return { label: 'Tinggi',         color: '#f59e0b',        desc: 'Pertimbangkan pengenceran' };
+    return               { label: 'Sangat Tinggi',  color: 'var(--danger)',  desc: 'Segera encerkan larutan' };
+  };
+
   const status = phStatus(h.ph);
 
   const fetchHistoryByDate = async (date: string) => {
@@ -165,7 +174,7 @@ export default function App() {
     labels: labels.length ? labels.filter((_, i) => i % step === 0) : [''],
     datasets: [
       {
-        data: h.realtimeHistory.map(d => parseFloat(d.value)),
+        data: h.realtimeHistory.map(d => parseFloat(String(d.ph_value))),
         borderColor: 'rgba(62, 122, 74, 1)',
         backgroundColor: 'rgba(62, 122, 74, 0.1)',
         tension: 0.4,
@@ -219,13 +228,13 @@ export default function App() {
           <>
             <div className="desktop-grid">
               
-              {/* Row 1 */}
-              <div className="col-span-4">
-                <div className="card" style={{ height: '100%' }}>
+              {/* Row 1: Sensors */}
+              <div className="col-span-6">
+                <div className="card sensor-card sensor-card-ph" style={{ height: '100%' }}>
                   <div className="card-row">
-                    <div className="icon-box"><Activity size={18} /></div>
+                    <div className="icon-box"><Activity size={20} /></div>
                     <div className="card-title">Live pH Sensor</div>
-                    <div className="badge" style={{ backgroundColor: `${status.color}22`, color: status.color }}>
+                    <div className="badge">
                       {status.label}
                     </div>
                   </div>
@@ -236,13 +245,38 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="col-span-8">
+              {/* TDS Card */}
+              <div className="col-span-6">
+                {(() => {
+                  const ts = tdsStatus(h.tds);
+                  return (
+                    <div className="card sensor-card sensor-card-tds" style={{ height: '100%' }}>
+                      <div className="card-row">
+                        <div className="icon-box"><Gauge size={20} /></div>
+                        <div className="card-title">Live TDS Sensor</div>
+                        <div className="badge">
+                          {ts.label}
+                        </div>
+                      </div>
+                      <div className="ph-box">
+                        <div className="ph-num">
+                          {h.tds !== null ? Math.round(h.tds) : '--'}
+                        </div>
+                        <div className="ph-unit">ppm &nbsp;·&nbsp; {ts.desc}</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Row 2: Tracker */}
+              <div className="col-span-12">
                 <div className="card" style={{ height: '100%' }}>
                   <div className="card-row">
                     <div className="icon-box"><TrendingUp size={18} /></div>
                     <div className="card-title">Realtime Tracker</div>
                   </div>
-                  <div style={{ height: 200, width: '100%', flex: 1 }}>
+                  <div style={{ height: 260, width: '100%', flex: 1, marginTop: '10px' }}>
                     {h.realtimeHistory.length > 0 ? (
                       <Line data={chartData} options={chartOptions as any} />
                     ) : (
@@ -412,11 +446,10 @@ export default function App() {
               </div>
             </div>
 
-            {/* Data Table */}
             <div className="card table-card">
               <div className="table-header">
                 <div className="icon-box" style={{ marginRight: 14 }}><Database size={18} /></div>
-                <div className="card-title" style={{ fontSize: 18 }}>Data Records Tabel</div>
+                <div className="card-title" style={{ fontSize: 18 }}>Data Record Sensor</div>
                 {historyData.length > 0 && (
                   <div className="badge" style={{ backgroundColor: 'var(--p500)', color: '#fff', marginLeft: 'auto', fontSize: 13, padding: '6px 14px' }}>
                     {historyData.length} entri ditemukan
@@ -432,30 +465,44 @@ export default function App() {
                   <div className="empty-text">Tidak ada rekaman data pada tanggal ini</div>
                 </div>
               ) : (
-                <>
+                <div style={{ overflowX: 'auto' }}>
                   <div className="table-head">
-                    <div className="th">Waktu Eksekusi</div>
-                    <div className="th">Nilai pH Re-kalkulasi</div>
-                    <div className="th">Status Asiditas</div>
+                    <div className="th" style={{ minWidth: 100 }}>Waktu Eksekusi</div>
+                    <div className="th" style={{ minWidth: 100 }}>Nilai pH</div>
+                    <div className="th" style={{ minWidth: 140 }}>Status Asiditas</div>
+                    <div className="th" style={{ minWidth: 100 }}>Nilai TDS</div>
+                    <div className="th" style={{ minWidth: 140 }}>Status Nutrisi</div>
                   </div>
                   {historyData.map((item, idx) => {
                     const d = new Date(item.created_at);
                     const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-                    const val = parseFloat(item.value);
-                    const st = phStatus(val);
+                    const phVal = item.ph_value != null ? parseFloat(String(item.ph_value)) : null;
+                    const tdsVal = item.tds_value != null ? parseFloat(String(item.tds_value)) : null;
+                    const stPh = phStatus(phVal);
+                    const stTds = tdsStatus(tdsVal);
                     return (
-                      <div className={`table-row ${idx % 2 === 1 ? 'table-row-alt' : ''}`} key={idx}>
-                        <div className="td">{time} WIB</div>
-                        <div className="td" style={{ fontWeight: 700, color: 'var(--p700)' }}>{val.toFixed(2)}</div>
-                        <div style={{ flex: 1 }}>
-                          <span className="badge" style={{ backgroundColor: `${st.color}22`, color: st.color }}>
-                            {st.label}
+                      <div className={`table-row ${idx % 2 === 1 ? 'table-row-alt' : ''}`} key={idx} style={{ flexWrap: 'nowrap', minWidth: 600 }}>
+                        <div className="td" style={{ minWidth: 100 }}>{time} WIB</div>
+                        <div className="td" style={{ minWidth: 100, fontWeight: 700, color: 'var(--p700)' }}>
+                          {phVal !== null ? phVal.toFixed(2) : '--'}
+                        </div>
+                        <div className="td" style={{ minWidth: 140 }}>
+                          <span className="badge" style={{ backgroundColor: `${stPh.color}22`, color: stPh.color }}>
+                            {stPh.label}
+                          </span>
+                        </div>
+                        <div className="td" style={{ minWidth: 100, fontWeight: 700, color: 'var(--p700)' }}>
+                          {tdsVal !== null ? Math.round(tdsVal) + ' ppm' : '--'}
+                        </div>
+                        <div className="td" style={{ minWidth: 140 }}>
+                          <span className="badge" style={{ backgroundColor: `${stTds.color}22`, color: stTds.color }}>
+                            {stTds.label}
                           </span>
                         </div>
                       </div>
                     );
                   })}
-                </>
+                </div>
               )}
             </div>
 

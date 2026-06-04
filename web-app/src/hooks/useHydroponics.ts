@@ -8,8 +8,8 @@ const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'wss://server-iot-qbyte.qbyte.w
 const API_URL = process.env.NEXT_PUBLIC_API_BASE || 'https://hydroponik.qbyte.web.id';
 
 export interface PhHistoryItem {
-  id: number;
-  value: string;
+  ph_value: string | number;
+  tds_value: string | number;
   created_at: string;
 }
 
@@ -18,6 +18,7 @@ export function useHydroponics() {
   const [wsConnected, setWsConnected] = useState(false);
   
   const [ph, setPh] = useState<number | null>(null);
+  const [tds, setTds] = useState<number | null>(null);
   const [mode, setMode] = useState<'otomatis' | 'manual'>('manual');
   const [threshold, setThreshold] = useState<string>('6.5');
   const [emailTujuan, setEmailTujuan] = useState<string>('');
@@ -72,7 +73,8 @@ export function useHydroponics() {
       if (res.data?.success && res.data.data.length > 0) {
         const hist = res.data.data.reverse() as PhHistoryItem[];
         setRealtimeHistory(hist.slice(-10));
-        setPh(prev => prev === null ? parseFloat(hist[hist.length - 1].value) : prev);
+        const lastPh = hist[hist.length - 1].ph_value;
+        setPh(prev => prev === null && lastPh != null ? parseFloat(String(lastPh)) : prev);
       }
     } catch (e) {
       console.error('fetchInitialRealtimeHistory:', e);
@@ -85,6 +87,7 @@ export function useHydroponics() {
       setWsConnected(true);
       const topics = [
         `data/ph/user/${USER_ID}`,
+        `data/tds/user/${USER_ID}`,
         `data/mode/user/${USER_ID}`,
         `data/treshold/user/${USER_ID}`,
         `data/relay1/user/${USER_ID}`,
@@ -121,6 +124,13 @@ export function useHydroponics() {
           if (timeoutRef.current) clearTimeout(timeoutRef.current);
           timeoutRef.current = setTimeout(() => setIsOnline(false), 10_000);
         }
+        break;
+      }
+      case `data/tds/user/${USER_ID}`: {
+        const val = typeof payload === 'object'
+          ? (payload.sensor1 ?? payload.tds ?? parseFloat(payload))
+          : parseFloat(payload);
+        if (!isNaN(val)) setTds(val);
         break;
       }
       case `data/mode/user/${USER_ID}`:
@@ -213,6 +223,7 @@ export function useHydroponics() {
   return {
     isOnline,
     ph,
+    tds,
     mode,
     threshold,
     setThreshold,
