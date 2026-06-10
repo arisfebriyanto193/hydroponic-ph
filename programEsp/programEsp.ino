@@ -12,7 +12,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define RELAY1_PIN     5
 #define RELAY2_PIN     4
 #define PH_SENSOR_PIN  34
-#define TDS_SENSOR_PIN 33
+#define TDS_SENSOR_PIN 32
 #define CALIB_BTN_PIN  0
 
 #define PH_SEND_INTERVAL     1500
