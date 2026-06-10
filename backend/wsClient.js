@@ -2,10 +2,7 @@ const WebSocket = require('ws');
 const db = require('./db');
 const cron = require('node-cron');
 const { checkAndNotify } = require('./service/email_notif');
-
-
 const WS_URL = 'wss://server-iot-qbyte.qbyte.web.id/ws';
-
 let socket = null;
 let reconnectInterval = 5000;
 
@@ -29,8 +26,8 @@ async function getMaxRecords(userId) {
   }
 }
 
-// Cron job berjalan setiap kelipatan 5 menit (contoh: 00:00, 00:05, 00:10, dst)
-cron.schedule('*/5 * * * *', async () => {
+// Cron job berjalan setiap kelipatan 15 menit
+cron.schedule('*/15 * * * *', async () => {
   if (latestPhData !== null || latestTdsData !== null) {
     let phValue = 0;
     if (latestPhData !== null) {
@@ -104,12 +101,26 @@ cron.schedule('*/5 * * * *', async () => {
   }
 });
 
+let pingInterval;
+let pingTimeout;
+
 function connectWS() {
   console.log(`[WebSocket] Connecting to ${WS_URL}...`);
   socket = new WebSocket(WS_URL);
 
   socket.on('open', () => {
     console.log('[WebSocket] Connected');
+
+    // Ping server periodically to maintain connection
+    pingInterval = setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.ping();
+        pingTimeout = setTimeout(() => {
+          console.log('[WebSocket] Ping timeout, terminating connection...');
+          socket.terminate();
+        }, 10000);
+      }
+    }, 30000);
 
     // Subscribe to topics
     const topicsToSubscribe = [
@@ -128,6 +139,10 @@ function connectWS() {
       }));
     });
     console.log('[WebSocket] Subscribed to topics');
+  });
+
+  socket.on('pong', () => {
+    clearTimeout(pingTimeout);
   });
 
   socket.on('message', async (data) => {
@@ -151,6 +166,8 @@ function connectWS() {
   });
 
   socket.on('close', () => {
+    clearInterval(pingInterval);
+    clearTimeout(pingTimeout);
     console.log('[WebSocket] Disconnected. Reconnecting in 5s...');
     setTimeout(connectWS, reconnectInterval);
   });
