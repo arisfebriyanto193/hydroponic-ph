@@ -197,11 +197,11 @@ async function handleMessage(topic, rawPayload) {
     // Check if topic is related to user 9911
     if (topic === `data/ph/user/${USER_ID}`) {
       latestPhData = payload; // sudah berupa object
-      console.log(`[WS] pH payload diterima:`, payload);
+      //console.log(`[WS] pH payload diterima:`, payload);
     }
     else if (topic === `data/tds/user/${USER_ID}`) {
       latestTdsData = payload; // sudah berupa object
-      console.log(`[WS] TDS payload diterima:`, payload);
+      //console.log(`[WS] TDS payload diterima:`, payload);
     }
     else if (topic === `data/mode/user/${USER_ID}`) {
       // payload ex: "otomatis" / "manual"

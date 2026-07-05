@@ -1,6 +1,27 @@
 require('dotenv').config();
 const nodemailer = require('nodemailer');
 const db = require('../db');
+const fs = require('fs');
+const path = require('path');
+
+// ─────────────────────────────────────────────
+//  File Logger → backend/logs/email.log
+// ─────────────────────────────────────────────
+const LOG_DIR  = path.join(__dirname, '..', 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'email.log');
+
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+
+function fileLog(level, message) {
+  const ts   = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+  const line = `[${ts}] [${level}] ${message}\n`;
+  // Tulis ke file (append)
+  fs.appendFile(LOG_FILE, line, (err) => { if (err) console.error('[Logger] Gagal tulis log:', err.message); });
+  // Tetap tampil di console PM2
+  if (level === 'ERROR') console.error(`[EmailNotif] ${message}`);
+  else if (level === 'WARN')  console.warn(`[EmailNotif] ${message}`);
+  else                        console.log(`[EmailNotif] ${message}`);
+}
 
 // ─────────────────────────────────────────────
 //  Konfigurasi Transporter (SMTP)
@@ -146,7 +167,7 @@ async function checkAndNotify(userId, phValue) {
     );
 
     if (!rows.length) {
-      console.log(`[EmailNotif] User ${userId} tidak ditemukan di device_states.`);
+      fileLog('WARN', `User ${userId} tidak ditemukan di device_states.`);
       return;
     }
 
@@ -154,19 +175,19 @@ async function checkAndNotify(userId, phValue) {
 
     // 2. Hanya aktif di mode manual
     if (mode !== 'manual') {
-      return;
+      return; // Mode otomatis — tidak perlu log, terlalu sering
     }
 
     // 3. Validasi email tujuan
     if (!email_tujuan || !email_tujuan.trim()) {
-      console.warn(`[EmailNotif] email_tujuan kosong untuk user ${userId}. Skip notifikasi.`);
+      fileLog('WARN', `email_tujuan kosong untuk user ${userId}. Skip notifikasi.`);
       return;
     }
 
     // 4. Parse threshold
     const threshold = parseThreshold(thresholdStr);
     if (!threshold) {
-      console.warn(`[EmailNotif] Threshold tidak valid untuk user ${userId}: "${thresholdStr}"`);
+      fileLog('WARN', `Threshold tidak valid untuk user ${userId}: "${thresholdStr}"`);
       return;
     }
 
@@ -176,10 +197,10 @@ async function checkAndNotify(userId, phValue) {
     else if (phValue > threshold.max) direction = 'tinggi';
 
     if (!direction) {
-      // pH normal — reset timer agar email bisa dikirim lagi jika nanti keluar batas
+      // pH normal — reset timer
       if (lastSentMap[userId]) {
         delete lastSentMap[userId];
-        console.log(`[EmailNotif] pH user ${userId} kembali normal (${phValue}). Timer direset.`);
+        fileLog('INFO', `pH user ${userId} kembali normal (${phValue.toFixed(2)}). Timer direset.`);
       }
       return;
     }
@@ -189,13 +210,15 @@ async function checkAndNotify(userId, phValue) {
     const now = Date.now();
     if (lastSent && now - lastSent < INTERVAL_MS) {
       const sisaMenit = Math.ceil((INTERVAL_MS - (now - lastSent)) / 60000);
-      console.log(`[EmailNotif] Interval belum habis untuk user ${userId}. Sisa ~${sisaMenit} menit.`);
+      fileLog('INFO', `Skip kirim email user ${userId}: interval belum habis, sisa ~${sisaMenit} menit. pH=${phValue.toFixed(2)} (${direction})`);
       return;
     }
 
     // 7. Kirim email
     const emailTo = email_tujuan.trim();
     const subject = `⚠️ pH ${direction === 'rendah' ? 'Terlalu Rendah' : 'Terlalu Tinggi'} – Hidroponik User ${userId}`;
+
+    fileLog('INFO', `Mencoba kirim email ke ${emailTo} | pH=${phValue.toFixed(2)} | threshold=[${threshold.min}-${threshold.max}] | arah=${direction}`);
 
     await transporter.sendMail({
       from: `"Sistem Hidroponik" <${process.env.EMAIL_USER}>`,
@@ -205,10 +228,10 @@ async function checkAndNotify(userId, phValue) {
     });
 
     lastSentMap[userId] = now;
-    console.log(`[EmailNotif] ✅ Email terkirim ke ${emailTo} | pH=${phValue} | threshold=[${threshold.min}-${threshold.max}] | arah=${direction}`);
+    fileLog('SUCCESS', `✅ Email TERKIRIM ke ${emailTo} | pH=${phValue.toFixed(2)} | threshold=[${threshold.min}-${threshold.max}] | arah=${direction}`);
 
   } catch (err) {
-    console.error(`[EmailNotif] ❌ Error saat checkAndNotify untuk user ${userId}:`, err.message);
+    fileLog('ERROR', `❌ Gagal checkAndNotify user ${userId}: ${err.message}`);
   }
 }
 
