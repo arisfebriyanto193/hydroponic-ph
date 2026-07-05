@@ -235,12 +235,12 @@ export default function App() {
                     <div className="icon-box"><Activity size={20} /></div>
                     <div className="card-title">Live pH Sensor</div>
                     <div className="badge">
-                      {status.label}
+                
                     </div>
                   </div>
                   <div className="ph-box">
                     <div className="ph-num">{h.ph !== null ? h.ph.toFixed(2) : '--'}</div>
-                    <div className="ph-unit">Potential of Hydrogen</div>
+            
                   </div>
                 </div>
               </div>
@@ -255,14 +255,14 @@ export default function App() {
                         <div className="icon-box"><Gauge size={20} /></div>
                         <div className="card-title">Live TDS Sensor</div>
                         <div className="badge">
-                          {ts.label}
+                          
                         </div>
                       </div>
                       <div className="ph-box">
                         <div className="ph-num">
                           {h.tds !== null ? Math.round(h.tds) : '--'}
                         </div>
-                        <div className="ph-unit">ppm &nbsp;·&nbsp; {ts.desc}</div>
+                        <div className="ph-unit">ppm</div>
                       </div>
                     </div>
                   );

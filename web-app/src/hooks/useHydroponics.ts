@@ -82,8 +82,11 @@ export function useHydroponics() {
   };
 
   const connectWebSocket = () => {
+    console.log(`[WebSocket] 🔄 Menghubungkan ke: ${WS_URL}`);
     ws.current = new WebSocket(WS_URL);
+
     ws.current.onopen = () => {
+      console.log(`[WebSocket] ✅ TERHUBUNG ke ${WS_URL}`);
       setWsConnected(true);
       const topics = [
         `data/ph/user/${USER_ID}`,
@@ -93,9 +96,14 @@ export function useHydroponics() {
         `data/relay1/user/${USER_ID}`,
         `data/relay2/user/${USER_ID}`,
       ];
-      topics.forEach(t => ws.current?.send(JSON.stringify({ action: 'subscribe', topic: t })));
+      topics.forEach(t => {
+        console.log(`[WebSocket] 📡 Subscribe ke topic: ${t}`);
+        ws.current?.send(JSON.stringify({ action: 'subscribe', topic: t }));
+      });
     };
+
     ws.current.onmessage = (e) => {
+      console.log('[WebSocket] 📨 Pesan diterima:', e.data);
       e.data.split('\\n').forEach((raw: string) => {
         if (!raw.trim()) return;
         try {
@@ -104,33 +112,57 @@ export function useHydroponics() {
         } catch (_) {}
       });
     };
-    ws.current.onclose = () => {
+
+    ws.current.onerror = (err) => {
+      console.error('[WebSocket] ❌ ERROR koneksi:', err);
+    };
+
+    ws.current.onclose = (event) => {
+      console.warn(`[WebSocket] ⚠️ TERPUTUS — code: ${event.code}, reason: "${event.reason || 'tidak ada alasan'}", wasClean: ${event.wasClean}`);
       setWsConnected(false);
       setIsOnline(false);
+      console.log('[WebSocket] 🔁 Reconnect dalam 5 detik...');
       setTimeout(connectWebSocket, 5000);
     };
   };
 
-  const handleWsMessage = (topic: string, payload: any) => {
+  const handleWsMessage = (topic: string, rawPayload: any) => {
     const inGracePeriod = Date.now() < ignoreWsStateUntil.current;
+
+    // Payload bisa berupa JSON string "{\"sensor1\":6.85}" → parse dulu ke object
+    let payload = rawPayload;
+    if (typeof rawPayload === 'string') {
+      try {
+        payload = JSON.parse(rawPayload);
+        console.log('[WebSocket] 🔓 Payload di-parse dari string:', payload);
+      } catch (_) {
+        // Biarkan sebagai string (mis. "otomatis", "1", dst)
+      }
+    }
+
     switch (topic) {
       case `data/ph/user/${USER_ID}`: {
         const val = typeof payload === 'object'
-          ? (payload.pH ?? payload.sensor1 ?? parseFloat(payload))
+          ? parseFloat(String(payload.pH ?? payload.sensor1 ?? NaN))
           : parseFloat(payload);
+        console.log(`[WebSocket] 🌡️ pH raw:`, rawPayload, '→ parsed val:', val);
         if (!isNaN(val)) {
           setPh(val);
           setIsOnline(true);
           if (timeoutRef.current) clearTimeout(timeoutRef.current);
           timeoutRef.current = setTimeout(() => setIsOnline(false), 10_000);
+        } else {
+          console.warn('[WebSocket] ⚠️ pH val NaN, diabaikan. payload:', payload);
         }
         break;
       }
       case `data/tds/user/${USER_ID}`: {
         const val = typeof payload === 'object'
-          ? (payload.sensor1 ?? payload.tds ?? parseFloat(payload))
+          ? parseFloat(String(payload.sensor1 ?? payload.tds ?? NaN))
           : parseFloat(payload);
+        console.log(`[WebSocket] 💧 TDS raw:`, rawPayload, '→ parsed val:', val);
         if (!isNaN(val)) setTds(val);
+        else console.warn('[WebSocket] ⚠️ TDS val NaN, diabaikan. payload:', payload);
         break;
       }
       case `data/mode/user/${USER_ID}`:

@@ -23,8 +23,10 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define TDS_TEMPERATURE        25.0f    // asumsi suhu air 25°C
 
 // ---- Parameter State Machine pH Control ----
+// #define DOSING_TIME_MS         3000    // Durasi relay aktif saat injeksi (3 detik)
+// #define MIXING_DELAY_MS        60000   // Waktu tunggu pelarutan setelah injeksi (60 detik)
 #define DOSING_TIME_MS         3000    // Durasi relay aktif saat injeksi (3 detik)
-#define MIXING_DELAY_MS        60000   // Waktu tunggu pelarutan setelah injeksi (60 detik)
+#define MIXING_DELAY_MS        126000   // Waktu tunggu pelarutan setelah injeksi (60 detik)
 #define DOSING_FAILSAFE_COUNT  10      // Batas injeksi berurutan sebelum failsafe aktif
 
 char cfgWsHost[80]   = "server-iot-qbyte.qbyte.web.id";

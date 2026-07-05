@@ -29,23 +29,8 @@ async function getMaxRecords(userId) {
 // Cron job berjalan setiap kelipatan 15 menit
 cron.schedule('*/15 * * * *', async () => {
   if (latestPhData !== null || latestTdsData !== null) {
-    let phValue = 0;
-    if (latestPhData !== null) {
-      if (typeof latestPhData === 'object' && latestPhData !== null) {
-        phValue = latestPhData.sensor1 || latestPhData.pH || 0;
-      } else {
-        phValue = parseFloat(latestPhData);
-      }
-    }
-
-    let tdsValue = 0;
-    if (latestTdsData !== null) {
-      if (typeof latestTdsData === 'object' && latestTdsData !== null) {
-        tdsValue = latestTdsData.sensor1 || latestTdsData.tds || 0;
-      } else {
-        tdsValue = parseFloat(latestTdsData);
-      }
-    }
+    const phValue  = latestPhData  !== null ? extractNumber(latestPhData,  'pH', 'sensor1') : NaN;
+    const tdsValue = latestTdsData !== null ? extractNumber(latestTdsData, 'sensor1', 'tds') : NaN;
 
     try {
       const MAX_RECORDS = await getMaxRecords(USER_ID);
@@ -178,16 +163,45 @@ function connectWS() {
   });
 }
 
-async function handleMessage(topic, payload) {
+// Parse payload jika berupa JSON string (ex: "{\"sensor1\":6.85}" → {sensor1: 6.85})
+function parsePayload(raw) {
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch (_) {
+      return raw; // kembalikan sebagai string biasa
+    }
+  }
+  return raw;
+}
+
+// Ekstrak nilai numerik dari payload (object atau string angka)
+function extractNumber(payload, ...keys) {
+  const p = parsePayload(payload);
+  if (typeof p === 'object' && p !== null) {
+    for (const key of keys) {
+      if (p[key] !== undefined && p[key] !== null) {
+        const val = parseFloat(p[key]);
+        if (!isNaN(val)) return val;
+      }
+    }
+    return NaN;
+  }
+  return parseFloat(p);
+}
+
+async function handleMessage(topic, rawPayload) {
   try {
-    const topicParts = topic.split('/');
+    const payload = parsePayload(rawPayload);
 
     // Check if topic is related to user 9911
     if (topic === `data/ph/user/${USER_ID}`) {
-      latestPhData = payload;
+      latestPhData = payload; // sudah berupa object
+      console.log(`[WS] pH payload diterima:`, payload);
     }
     else if (topic === `data/tds/user/${USER_ID}`) {
-      latestTdsData = payload;
+      latestTdsData = payload; // sudah berupa object
+      console.log(`[WS] TDS payload diterima:`, payload);
     }
     else if (topic === `data/mode/user/${USER_ID}`) {
       // payload ex: "otomatis" / "manual"
